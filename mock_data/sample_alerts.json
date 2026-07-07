@@ -1,0 +1,16 @@
+[
+  {
+    "source": "KMD_test",
+    "geography_type": "ward",
+    "geography_ref": "Kisumu_Central",
+    "rainfall_mm": 65,
+    "raw_payload": {"forecast_window": "next_24h", "confidence": "high"}
+  },
+  {
+    "source": "KMD_test",
+    "geography_type": "corridor",
+    "geography_ref": "Ngong_Road",
+    "rainfall_mm": 40,
+    "raw_payload": {"forecast_window": "16:00-19:00", "confidence": "medium"}
+  }
+]
