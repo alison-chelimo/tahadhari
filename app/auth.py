@@ -1,3 +1,4 @@
+import hmac
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +11,11 @@ SERVICE_API_KEY = os.getenv("SERVICE_API_KEY", "")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
+
+if not SERVICE_API_KEY:
+    raise RuntimeError("SERVICE_API_KEY is not set - refusing to start with an empty machine-auth secret")
+if not JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY is not set - refusing to start with an empty JWT signing secret")
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -56,7 +62,7 @@ def require_service_or_admin(
 ) -> str:
     """Machine tier: the shared service API key OR a valid admin JWT (the admin is a
     strict superset of trust, so a logged-in admin can also hit these routes)."""
-    if x_api_key and SERVICE_API_KEY and x_api_key == SERVICE_API_KEY:
+    if x_api_key and hmac.compare_digest(x_api_key, SERVICE_API_KEY):
         return "service"
     if credentials is not None:
         return _decode_admin_token(credentials.credentials)
