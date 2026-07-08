@@ -14,6 +14,10 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Test / coverage artifacts
+.coverage
+.pytest_cache/
+
 # Distribution / packaging
 build/
 dist/
