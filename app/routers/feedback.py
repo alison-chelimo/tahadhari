@@ -1,18 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from ..auth import require_service_or_admin
 from ..database import get_db
 from ..models import Feedback, Message, Profile
 from ..schemas import FeedbackIn, FeedbackOut
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_service_or_admin)])
 
 @router.post("/", response_model=FeedbackOut, status_code=status.HTTP_201_CREATED)
 def create_feedback(payload: FeedbackIn, db: Session = Depends(get_db)):
-    if not db.query(Message).filter(Message.id == payload.message_id).first():
+    message = db.query(Message).filter(Message.id == payload.message_id).first()
+    if not message:
         raise HTTPException(status_code=404, detail=f"Message {payload.message_id} not found")
     if not db.query(Profile).filter(Profile.id == payload.profile_id).first():
         raise HTTPException(status_code=404, detail=f"Profile {payload.profile_id} not found")
+    if message.profile_id != payload.profile_id:
+        raise HTTPException(status_code=400, detail="profile_id does not match message's profile_id")
 
     db_feedback = Feedback(
         message_id=payload.message_id,
