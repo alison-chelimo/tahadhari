@@ -25,6 +25,19 @@ class Profile(Base):
     ward = Column(String, nullable=True)
     route_id = Column(String, nullable=True)
     key_asset = Column(String, nullable=True)
+    registration_source = Column(String, nullable=False)  # "whatsapp_keyword" / "sms_keyword" / "partner_assisted"
+    registered_by = Column(String, nullable=True)  # CHW/chief identifier; set only for partner_assisted
+
+class RegistrationRequest(Base):
+    """A detected registration-keyword intent, logged for a partner/admin to follow up on.
+    Not linked to Profile -- completing registration is a separate later POST /profiles/."""
+    __tablename__ = "registration_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    phone_number = Column(String, nullable=False, index=True)
+    channel = Column(String, nullable=False)  # "whatsapp" or "sms"
+    raw_text = Column(String, nullable=False)
+    matched_keyword = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class ActionTemplate(Base):
     __tablename__ = "action_templates"

@@ -60,8 +60,14 @@ def test_alert_get_stays_public(client):
 
 
 def test_feedback_rejects_profile_mismatch(client, db_session):
-    profile_a = Profile(phone_number="+254700000001", channel="whatsapp", language="en", user_type="rural")
-    profile_b = Profile(phone_number="+254700000002", channel="whatsapp", language="en", user_type="rural")
+    profile_a = Profile(
+        phone_number="+254700000001", channel="whatsapp", language="en", user_type="rural",
+        registration_source="partner_assisted", registered_by="test",
+    )
+    profile_b = Profile(
+        phone_number="+254700000002", channel="whatsapp", language="en", user_type="rural",
+        registration_source="partner_assisted", registered_by="test",
+    )
     db_session.add_all([profile_a, profile_b])
     db_session.commit()
 

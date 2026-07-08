@@ -23,6 +23,8 @@ for p in DEFAULT_MOCK_PROFILES:
         ward=p.ward,
         route_id=p.route_id,
         key_asset=p.key_asset,
+        registration_source="partner_assisted",
+        registered_by="seed_script",
     ))
 
 db.commit()
