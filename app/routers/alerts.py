@@ -60,7 +60,13 @@ def predict_flooding(alert_id: int, db: Session = Depends(get_db)):
     return {
         "flagged_segments": len(predictions),
         "predictions": [
-            {"segment": seg.segment_name, "risk": p.risk_level}
+            {
+                "flood_prediction_id": p.id,
+                "segment": seg.segment_name,
+                "risk": p.risk_level,
+                "window_start": p.window_start,
+                "window_end": p.window_end,
+            }
             for seg, p in zip(flagged_segments, predictions)
         ]
     }
