@@ -137,15 +137,19 @@ Runs the rainfall/drainage threshold check for a corridor alert and returns flag
 {
   "flagged_segments": 6,
   "predictions": [
-    {"segment": "Dagoretti_Corner", "risk": "medium"},
-    {"segment": "Riara_Road_Junction", "risk": "high"},
-    {"segment": "Adams_Arcade", "risk": "high"},
-    {"segment": "Jamhuri_Junction", "risk": "medium"},
-    {"segment": "Yaya_Centre", "risk": "medium"},
-    {"segment": "Kindaruma_Road_Junction", "risk": "high"}
+    {"flood_prediction_id": 1, "segment": "Dagoretti_Corner", "risk": "medium", "window_start": "2026-07-07T13:30:12.284924Z", "window_end": "2026-07-07T16:30:12.284924Z"},
+    {"flood_prediction_id": 2, "segment": "Riara_Road_Junction", "risk": "high", "window_start": "2026-07-07T13:30:12.284924Z", "window_end": "2026-07-07T16:30:12.284924Z"},
+    {"flood_prediction_id": 3, "segment": "Adams_Arcade", "risk": "high", "window_start": "2026-07-07T13:30:12.284924Z", "window_end": "2026-07-07T16:30:12.284924Z"},
+    {"flood_prediction_id": 4, "segment": "Jamhuri_Junction", "risk": "medium", "window_start": "2026-07-07T13:30:12.284924Z", "window_end": "2026-07-07T16:30:12.284924Z"},
+    {"flood_prediction_id": 5, "segment": "Yaya_Centre", "risk": "medium", "window_start": "2026-07-07T13:30:12.284924Z", "window_end": "2026-07-07T16:30:12.284924Z"},
+    {"flood_prediction_id": 6, "segment": "Kindaruma_Road_Junction", "risk": "high", "window_start": "2026-07-07T13:30:12.284924Z", "window_end": "2026-07-07T16:30:12.284924Z"}
   ]
 }
 ```
+
+`flood_prediction_id`/`window_start`/`window_end` come directly from the created
+`flood_predictions` row for each flagged segment (a fixed 3-hour window starting at
+the time the prediction was computed).
 
 **Threshold logic:**
 - A segment is flagged if `alert.rainfall_mm > segment.drainage_capacity_mm`
