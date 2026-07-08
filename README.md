@@ -33,13 +33,13 @@ To check coverage the same way CI does:
 pytest --cov=app --cov=ai_layer --cov-report=term-missing --cov-fail-under=80
 ```
 
-Tests run fully offline — the backend suite overrides the database with in-memory SQLite,
-and the `ai_layer` suite mocks all Claude/HTTP calls — so no real database, `.env`, or API
+Tests run fully offline: the backend suite overrides the database with in-memory SQLite,
+and the `ai_layer` suite mocks all Claude/HTTP calls, so no real database, `.env`, or API
 keys are required to run them locally.
 
 ## Contributing / CI
 
-All changes land on `main` via pull request — direct pushes to `main` are not the intended
+All changes land on `main` via pull request; direct pushes to `main` are not the intended
 workflow.
 
 Every PR into `main` runs the `.github/workflows/ci.yml` workflow, which:
@@ -47,26 +47,3 @@ Every PR into `main` runs the `.github/workflows/ci.yml` workflow, which:
 1. Installs dependencies and runs the full `pytest` suite.
 2. Fails the check if any test fails, **or** if combined coverage across `app` and
    `ai_layer` drops below **80%** (`--cov-fail-under=80`).
-
-**Branch protection:** this CI check is not yet *enforced* at the GitHub repo-settings
-level (that requires admin rights on `alison-chelimo/tahadhari`, which most contributors
-don't have). Until it is, please still open a PR rather than pushing to `main` directly.
-For whoever has admin — enable it with:
-
-```bash
-gh api repos/alison-chelimo/tahadhari/branches/main/protection \
-  -X PUT --input - <<'EOF'
-{
-  "required_status_checks": {
-    "strict": true,
-    "checks": [{ "context": "Tests + coverage" }]
-  },
-  "enforce_admins": false,
-  "required_pull_request_reviews": null,
-  "restrictions": null
-}
-EOF
-```
-
-This requires a PR (with the CI check passing and the branch up to date) before merging to
-`main`, and blocks direct pushes.

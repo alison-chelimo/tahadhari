@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
 from ..auth import require_service_or_admin
-from ..database import get_db
+from ..database import commit_or_error, get_db
 from ..models import Message, Profile, Alert, ActionTemplate, FloodPrediction
 from ..schemas import MessageIn, MessageOut
 
@@ -19,15 +18,10 @@ def create_message(payload: MessageIn, db: Session = Depends(get_db)):
     if payload.flood_prediction_id is not None and not db.query(FloodPrediction).filter(FloodPrediction.id == payload.flood_prediction_id).first():
         raise HTTPException(status_code=404, detail=f"FloodPrediction {payload.flood_prediction_id} not found")
 
-    db_message = Message(**payload.model_dump())
-    try:
-        db.add(db_message)
-        db.commit()
-        db.refresh(db_message)
-    except SQLAlchemyError:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to persist message")
-    return db_message
+    data = payload.model_dump()
+    data["channel"] = payload.channel.value
+    db_message = Message(**data)
+    return commit_or_error(db, db_message, resource_name="message")
 
 @router.get("/{message_id}", response_model=MessageOut)
 def get_message(message_id: int, db: Session = Depends(get_db)):

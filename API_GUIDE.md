@@ -355,10 +355,13 @@ found — nothing is persisted in that case.
   provider-agnostic placeholder; mapping a real vendor's webhook to it is future work
 - The registration keyword set is a minimal, single-language (English) MVP list
 - No multi-turn conversational registration flow — the webhook only detects and logs intent
-  (`RegistrationRequest`); completing a profile is a separate manual `POST /profiles/` call,
-  not automated or linked back to the request that triggered it
+  (`RegistrationRequest`); completing a profile is a separate manual `POST /profiles/` call.
+  `POST /profiles/` does resolve any matching pending `RegistrationRequest` for that phone
+  number (see "Registration webhook" above), but there's no automated hand-off in between.
 - USSD support is a planned later improvement, once the WhatsApp/SMS flow is proven
 - No Alembic/migration framework — `app/main.py` only calls `Base.metadata.create_all`, which
-  creates missing tables but does not `ALTER` existing ones; adding a `NOT NULL` column (as
-  `profiles.registration_source` did) needs a manual `ALTER TABLE` on any already-provisioned DB
+  creates missing tables but does not `ALTER` existing ones. Adding a `NOT NULL` column (as
+  `profiles.registration_source` did) needs a manual `ALTER TABLE` on any already-provisioned
+  DB — run `python migrate_profiles_registration_columns.py` once against such a database
+  before deploying this change to it (no-op against a fresh DB or one already migrated)
 - One admin account only — no signup flow, no password reset (rotate via `seed_admin.py` against a fresh DB, or update the row directly)

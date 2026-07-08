@@ -53,13 +53,15 @@ class Profile(BaseModel):
     ward: Optional[str] = None
     route_id: Optional[str] = None
     key_asset: Optional[str] = None
+    registration_source: Optional[str] = None
+    registered_by: Optional[str] = None
 
     @field_validator("route_id")
     @classmethod
     def validate_route_id(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        if not v or not ROUTE_ID_PATTERN.match(v):
+        if not v or not ROUTE_ID_PATTERN.fullmatch(v):
             raise ValueError(
                 f"route_id {v!r} must be a non-empty string matching ^[A-Za-z0-9_]+$ "
                 "(the road_segments.segment_name naming convention) -- see class docstring"

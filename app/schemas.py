@@ -28,13 +28,18 @@ class AlertOut(BaseModel):
         from_attributes = True
 
 
+class Channel(str, Enum):
+    WHATSAPP = "whatsapp"
+    SMS = "sms"
+
+
 class MessageIn(BaseModel):
     profile_id: int
     alert_id: int
     template_id: Optional[int] = None
     flood_prediction_id: Optional[int] = None
     final_text: str
-    channel: str  # "whatsapp" or "sms"
+    channel: Channel
 
 
 class MessageOut(BaseModel):
@@ -44,7 +49,7 @@ class MessageOut(BaseModel):
     template_id: Optional[int]
     flood_prediction_id: Optional[int]
     final_text: str
-    channel: str
+    channel: Channel
     delivery_status: str
     sent_at: datetime
 
@@ -90,11 +95,6 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
-class Channel(str, Enum):
-    WHATSAPP = "whatsapp"
-    SMS = "sms"
-
-
 class UserType(str, Enum):
     RURAL = "rural"
     URBAN = "urban"
@@ -106,7 +106,7 @@ class RegistrationSource(str, Enum):
     PARTNER_ASSISTED = "partner_assisted"
 
 
-class ProfileIn(BaseModel):
+class _ProfileFields(BaseModel):
     phone_number: str
     channel: Channel
     language: str = "en"
@@ -118,38 +118,33 @@ class ProfileIn(BaseModel):
     registration_source: RegistrationSource
     registered_by: Optional[str] = None
 
+
+class ProfileIn(_ProfileFields):
     @field_validator("route_id")
     @classmethod
     def validate_route_id(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        if not v or not ROUTE_ID_PATTERN.match(v):
-            raise ValueError(f"route_id {v!r} must be a non-empty string matching ^[A-Za-z0-9_]+$")
+        if not v or not ROUTE_ID_PATTERN.fullmatch(v):
+            raise ValueError(f"route_id {v!r} must be a non-empty string matching {ROUTE_ID_PATTERN.pattern}")
         return v
 
     @model_validator(mode="after")
     def validate_conditional_fields(self) -> "ProfileIn":
-        if self.user_type == UserType.RURAL and (not self.ward or not self.occupation):
-            raise ValueError("rural registrations require both ward and occupation")
+        errors = []
+        if self.user_type == UserType.RURAL and (not self.ward or not self.occupation or not self.key_asset):
+            errors.append("rural registrations require ward, occupation, and key_asset")
         if self.user_type == UserType.URBAN and not self.route_id:
-            raise ValueError("urban registrations require route_id")
+            errors.append("urban registrations require route_id")
         if self.registration_source == RegistrationSource.PARTNER_ASSISTED and not self.registered_by:
-            raise ValueError("partner-assisted registrations require registered_by")
+            errors.append("partner-assisted registrations require registered_by")
+        if errors:
+            raise ValueError("; ".join(errors))
         return self
 
 
-class ProfileOut(BaseModel):
+class ProfileOut(_ProfileFields):
     id: int
-    phone_number: str
-    channel: str
-    language: str
-    user_type: str
-    occupation: Optional[str]
-    ward: Optional[str]
-    route_id: Optional[str]
-    key_asset: Optional[str]
-    registration_source: str
-    registered_by: Optional[str]
 
     class Config:
         from_attributes = True
@@ -168,3 +163,17 @@ class RegistrationWebhookOut(BaseModel):
     matched: bool
     registration_request_id: Optional[int] = None
     keyword: Optional[str] = None
+
+
+class RegistrationRequestOut(BaseModel):
+    id: int
+    phone_number: str
+    channel: str
+    raw_text: str
+    matched_keyword: Optional[str]
+    profile_id: Optional[int]
+    resolved_at: Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

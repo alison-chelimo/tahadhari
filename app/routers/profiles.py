@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.sql import func
 from ..auth import require_service_or_admin
-from ..database import get_db
-from ..models import Profile
+from ..database import commit_or_error, get_db
+from ..models import Profile, RegistrationRequest
 from ..schemas import ProfileIn, ProfileOut
 
 router = APIRouter(dependencies=[Depends(require_service_or_admin)])
@@ -23,19 +23,19 @@ def create_profile(payload: ProfileIn, db: Session = Depends(get_db)):
         registration_source=payload.registration_source.value,
         registered_by=payload.registered_by,
     )
-    try:
-        db.add(db_profile)
-        db.commit()
-        db.refresh(db_profile)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Profile with phone_number {payload.phone_number!r} already exists",
-        )
-    except SQLAlchemyError:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to persist profile")
+    commit_or_error(
+        db, db_profile, resource_name="profile",
+        integrity_conflict_detail=f"Profile with phone_number {payload.phone_number!r} already exists",
+    )
+
+    # Resolve any pending registration-webhook intent for this phone number now that
+    # a profile actually exists for it (see app/routers/registration.py).
+    db.query(RegistrationRequest).filter(
+        RegistrationRequest.phone_number == payload.phone_number,
+        RegistrationRequest.resolved_at.is_(None),
+    ).update({"resolved_at": func.now(), "profile_id": db_profile.id})
+    db.commit()
+
     return db_profile
 
 
@@ -48,5 +48,9 @@ def get_profile(profile_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[ProfileOut])
-def list_profiles(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return db.query(Profile).offset(skip).limit(limit).all()
+def list_profiles(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    return db.query(Profile).order_by(Profile.id).offset(skip).limit(limit).all()

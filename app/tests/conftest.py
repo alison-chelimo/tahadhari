@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SERVICE_API_KEY", "test-service-key")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret")
+os.environ.setdefault("REGISTRATION_KEYWORDS", "REGISTER")
 
 import pytest
 from fastapi.testclient import TestClient
