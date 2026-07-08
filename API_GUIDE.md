@@ -252,6 +252,64 @@ Persists a classified WhatsApp/SMS reply to a message.
 
 **`GET /feedback/{feedback_id}`** — 404 if not found.
 
+## 6. Profiles
+
+**Requires:** service key or admin (all routes) — `Profile.phone_number` is PII, so unlike
+`GET /alerts/{alert_id}`, reads are gated the same as writes (matching the `Message`/
+`Feedback` pattern).
+
+A user registers once, either self-service via a WhatsApp/SMS keyword or assisted by a
+partner (a community health worker or chief). Rural users provide `ward` + `occupation` +
+`key_asset`; urban users provide `route_id` instead, since their risk maps to specific road
+segments rather than occupation. `channel` records which channel to message going forward
+(WhatsApp gets richer messages; SMS gets the same advice as plain text).
+
+**`POST /profiles/`**
+```json
+{
+  "phone_number": "+254712345099", "channel": "whatsapp", "user_type": "rural",
+  "occupation": "farmer", "ward": "Kisumu_Central", "key_asset": "maize_farm",
+  "registration_source": "whatsapp_keyword"
+}
+```
+**Conditional validation (422 if violated):**
+- `user_type: "rural"` requires `ward` and `occupation`
+- `user_type: "urban"` requires `route_id`, which must match `^[A-Za-z0-9_]+$` (same rule
+  `ai_layer` uses — a `road_segments.segment_name` value, e.g. `"Adams_Arcade"`)
+- `registration_source: "partner_assisted"` requires `registered_by` (the CHW/chief identifier)
+
+`registration_source` is one of `whatsapp_keyword`, `sms_keyword`, `partner_assisted`.
+**409** if `phone_number` is already registered. Returns 201 with the full `ProfileOut` record.
+
+**`GET /profiles/{profile_id}`** — 404 if not found.
+
+**`GET /profiles/`** — `skip`/`limit` query params (defaults `0`/`100`).
+
+## 7. Registration webhook
+
+**Requires:** service key or admin
+
+Receives an inbound WhatsApp/SMS message and detects whether it's a registration keyword.
+This does **not** create a `Profile` — it only logs the intent as a `RegistrationRequest` for
+a partner/admin to follow up on (there's no multi-turn conversation flow yet; see "Known
+limitations"). The payload shape is a provider-agnostic placeholder — no real gateway
+(Twilio/Meta WhatsApp Business API/Africa's Talking) is integrated yet.
+
+**`POST /registration/webhook`**
+```json
+{"phone_number": "+254712345099", "channel": "sms", "text": "REGISTER"}
+```
+Matching is case-insensitive, against the whole message or the keyword as the leading word
+(`"register"` or `"register please"` both match). The keyword set defaults to `REGISTER` and
+is overridable via the `REGISTRATION_KEYWORDS` env var (comma-separated).
+
+**Response:**
+```json
+{"matched": true, "registration_request_id": 1, "keyword": "register"}
+```
+`matched: false` (with `registration_request_id`/`keyword` both `null`) if no keyword was
+found — nothing is persisted in that case.
+
 ---
 
 ## Schema reference (for context)
@@ -259,12 +317,13 @@ Persists a classified WhatsApp/SMS reply to a message.
 | Table | Key columns |
 |---|---|
 | `alerts` | id, hazard_type, severity, geography_type, geography_ref, rainfall_mm, source, raw_payload, created_at |
-| `profiles` | id, phone_number, channel, language, user_type, occupation, ward, route_id, key_asset |
+| `profiles` | id, phone_number, channel, language, user_type, occupation, ward, route_id, key_asset, registration_source, registered_by |
 | `action_templates` | id, hazard_type, occupation, severity, language, template_text |
 | `road_segments` | id, corridor_name, segment_name, start/end lat/lon, drainage_capacity_mm |
 | `flood_predictions` | id, alert_id, segment_id, risk_level, window_start, window_end |
 | `messages` | id, profile_id, alert_id, template_id, flood_prediction_id, final_text, channel, delivery_status, sent_at |
 | `feedback` | id, message_id, profile_id, feedback_type, feedback_text, created_at |
+| `registration_requests` | id, phone_number, channel, raw_text, matched_keyword, created_at |
 | `admin_users` | id, username, hashed_password, created_at |
 
 ---
@@ -292,5 +351,14 @@ Persists a classified WhatsApp/SMS reply to a message.
 
 - Only one hazard type (`heavy_rainfall`) is supported
 - Only one urban corridor (`Ngong_Road`) has seeded road segments
-- `profiles` has no CRUD endpoints yet (`app/routers/profiles.py` is an empty stub) — `ai_layer` uses mock profile data instead; a future profiles router should use the same admin-JWT dependency as template authoring
+- No real WhatsApp/SMS gateway is integrated — the registration webhook's payload shape is a
+  provider-agnostic placeholder; mapping a real vendor's webhook to it is future work
+- The registration keyword set is a minimal, single-language (English) MVP list
+- No multi-turn conversational registration flow — the webhook only detects and logs intent
+  (`RegistrationRequest`); completing a profile is a separate manual `POST /profiles/` call,
+  not automated or linked back to the request that triggered it
+- USSD support is a planned later improvement, once the WhatsApp/SMS flow is proven
+- No Alembic/migration framework — `app/main.py` only calls `Base.metadata.create_all`, which
+  creates missing tables but does not `ALTER` existing ones; adding a `NOT NULL` column (as
+  `profiles.registration_source` did) needs a manual `ALTER TABLE` on any already-provisioned DB
 - One admin account only — no signup flow, no password reset (rotate via `seed_admin.py` against a fresh DB, or update the row directly)

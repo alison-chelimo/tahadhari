@@ -7,6 +7,7 @@ AUTH_HEADERS = {"X-API-Key": SERVICE_API_KEY}
 def _make_profile(db_session) -> Profile:
     profile = Profile(
         phone_number="+254700000010", channel="whatsapp", language="en", user_type="rural",
+        registration_source="partner_assisted", registered_by="test",
     )
     db_session.add(profile)
     db_session.commit()

@@ -1,7 +1,12 @@
-from pydantic import BaseModel
+import re
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+
+# Duplicated intentionally from ai_layer.schemas.ROUTE_ID_PATTERN -- app and ai_layer are
+# independently deployable with no cross-import, so keep the two patterns in sync by hand.
+ROUTE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 
 class AlertIn(BaseModel):
     source: str
@@ -83,3 +88,83 @@ class LoginIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class Channel(str, Enum):
+    WHATSAPP = "whatsapp"
+    SMS = "sms"
+
+
+class UserType(str, Enum):
+    RURAL = "rural"
+    URBAN = "urban"
+
+
+class RegistrationSource(str, Enum):
+    WHATSAPP_KEYWORD = "whatsapp_keyword"
+    SMS_KEYWORD = "sms_keyword"
+    PARTNER_ASSISTED = "partner_assisted"
+
+
+class ProfileIn(BaseModel):
+    phone_number: str
+    channel: Channel
+    language: str = "en"
+    user_type: UserType
+    occupation: Optional[str] = None
+    ward: Optional[str] = None
+    route_id: Optional[str] = None
+    key_asset: Optional[str] = None
+    registration_source: RegistrationSource
+    registered_by: Optional[str] = None
+
+    @field_validator("route_id")
+    @classmethod
+    def validate_route_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not v or not ROUTE_ID_PATTERN.match(v):
+            raise ValueError(f"route_id {v!r} must be a non-empty string matching ^[A-Za-z0-9_]+$")
+        return v
+
+    @model_validator(mode="after")
+    def validate_conditional_fields(self) -> "ProfileIn":
+        if self.user_type == UserType.RURAL and (not self.ward or not self.occupation):
+            raise ValueError("rural registrations require both ward and occupation")
+        if self.user_type == UserType.URBAN and not self.route_id:
+            raise ValueError("urban registrations require route_id")
+        if self.registration_source == RegistrationSource.PARTNER_ASSISTED and not self.registered_by:
+            raise ValueError("partner-assisted registrations require registered_by")
+        return self
+
+
+class ProfileOut(BaseModel):
+    id: int
+    phone_number: str
+    channel: str
+    language: str
+    user_type: str
+    occupation: Optional[str]
+    ward: Optional[str]
+    route_id: Optional[str]
+    key_asset: Optional[str]
+    registration_source: str
+    registered_by: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class InboundMessageIn(BaseModel):
+    """Provider-agnostic inbound message shape. Mapping a real WhatsApp/SMS gateway's
+    actual webhook payload to this shape is future integration work -- no gateway is
+    wired up yet."""
+    phone_number: str
+    channel: Channel
+    text: str
+
+
+class RegistrationWebhookOut(BaseModel):
+    matched: bool
+    registration_request_id: Optional[int] = None
+    keyword: Optional[str] = None
