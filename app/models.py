@@ -30,13 +30,16 @@ class Profile(Base):
 
 class RegistrationRequest(Base):
     """A detected registration-keyword intent, logged for a partner/admin to follow up on.
-    Not linked to Profile -- completing registration is a separate later POST /profiles/."""
+    `resolved_at`/`profile_id` are set when a matching POST /profiles/ later completes
+    the registration this request signaled (see app/routers/profiles.py)."""
     __tablename__ = "registration_requests"
     id = Column(Integer, primary_key=True, index=True)
     phone_number = Column(String, nullable=False, index=True)
     channel = Column(String, nullable=False)  # "whatsapp" or "sms"
     raw_text = Column(String, nullable=False)
     matched_keyword = Column(String, nullable=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class ActionTemplate(Base):

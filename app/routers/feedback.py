@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
 from ..auth import require_service_or_admin
-from ..database import get_db
+from ..database import commit_or_error, get_db
 from ..models import Feedback, Message, Profile
 from ..schemas import FeedbackIn, FeedbackOut
 
@@ -24,14 +23,7 @@ def create_feedback(payload: FeedbackIn, db: Session = Depends(get_db)):
         feedback_type=payload.feedback_type.value,
         feedback_text=payload.feedback_text,
     )
-    try:
-        db.add(db_feedback)
-        db.commit()
-        db.refresh(db_feedback)
-    except SQLAlchemyError:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to persist feedback")
-    return db_feedback
+    return commit_or_error(db, db_feedback, resource_name="feedback")
 
 @router.get("/{feedback_id}", response_model=FeedbackOut)
 def get_feedback(feedback_id: int, db: Session = Depends(get_db)):

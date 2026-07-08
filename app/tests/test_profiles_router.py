@@ -73,6 +73,13 @@ def test_create_profile_rural_missing_occupation_422(client):
     assert response.status_code == 422
 
 
+def test_create_profile_rural_missing_key_asset_422(client):
+    payload = _rural_payload()
+    del payload["key_asset"]
+    response = client.post("/profiles/", json=payload, headers=AUTH_HEADERS)
+    assert response.status_code == 422
+
+
 def test_create_profile_urban_missing_route_id_422(client):
     payload = _urban_payload()
     del payload["route_id"]
@@ -136,3 +143,37 @@ def test_list_profiles_success(client):
 def test_list_profiles_requires_credential_401(client):
     response = client.get("/profiles/")
     assert response.status_code == 401
+
+
+def test_list_profiles_rejects_limit_over_max_422(client):
+    response = client.get("/profiles/", params={"limit": 1000}, headers=AUTH_HEADERS)
+    assert response.status_code == 422
+
+
+def test_list_profiles_ordered_by_id(client):
+    first = client.post("/profiles/", json=_rural_payload(phone_number="+254711000050"), headers=AUTH_HEADERS)
+    second = client.post("/profiles/", json=_urban_payload(phone_number="+254711000051"), headers=AUTH_HEADERS)
+
+    response = client.get("/profiles/", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    ids = [p["id"] for p in response.json()]
+    assert ids == sorted(ids)
+    assert first.json()["id"] in ids
+    assert second.json()["id"] in ids
+
+
+def test_profiles_service_key_sufficient_by_design(client):
+    """Profile.phone_number is PII, but profiles is intentionally gated the same as
+    Message/Feedback (service key or admin), not admin-only like template authoring --
+    see API_GUIDE.md's "Profiles" section. This test locks that choice in as deliberate
+    rather than an accidental gap, mirroring test_admin_only_route_rejects_service_key's
+    coverage of the opposite (admin-only) tier for POST /templates/."""
+    create = client.post("/profiles/", json=_rural_payload(phone_number="+254711000060"), headers=AUTH_HEADERS)
+    assert create.status_code == 201
+    profile_id = create.json()["id"]
+
+    get_one = client.get(f"/profiles/{profile_id}", headers=AUTH_HEADERS)
+    assert get_one.status_code == 200
+
+    list_all = client.get("/profiles/", headers=AUTH_HEADERS)
+    assert list_all.status_code == 200
