@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     tahadhari_api_base_url: str = "http://localhost:8000"
     tahadhari_api_timeout_seconds: float = 5.0
     tahadhari_api_max_retries: int = 3
+    tahadhari_service_api_key: str = ""
 
     claude_timeout_seconds: float = 30.0
     claude_max_retries: int = 2

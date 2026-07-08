@@ -67,7 +67,11 @@ class AlertsApiClient:
         self._base_url = (base_url or settings.tahadhari_api_base_url).rstrip("/")
         self._timeout = timeout if timeout is not None else settings.tahadhari_api_timeout_seconds
         self._max_retries = max_retries if max_retries is not None else settings.tahadhari_api_max_retries
-        self._client = http_client or httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout)
+        self._client = http_client or httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            headers={"X-API-Key": settings.tahadhari_service_api_key},
+        )
         self._owns_client = http_client is None
 
     async def __aenter__(self) -> "AlertsApiClient":

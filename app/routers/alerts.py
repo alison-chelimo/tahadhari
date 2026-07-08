@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from ..auth import require_service_or_admin
 from ..database import get_db
 from ..models import Alert, RoadSegment, FloodPrediction
 from ..schemas import AlertIn, AlertOut
@@ -14,7 +15,7 @@ def classify_severity(rainfall_mm: float) -> str:
         return "medium"
     return "low"
 
-@router.post("/ingest", response_model=AlertOut)
+@router.post("/ingest", response_model=AlertOut, dependencies=[Depends(require_service_or_admin)])
 def ingest_alert(alert: AlertIn, db: Session = Depends(get_db)):
     severity = classify_severity(alert.rainfall_mm)
     db_alert = Alert(
@@ -35,7 +36,7 @@ def ingest_alert(alert: AlertIn, db: Session = Depends(get_db)):
 def get_alert(alert_id: int, db: Session = Depends(get_db)):
     return db.query(Alert).filter(Alert.id == alert_id).first()
 
-@router.post("/predict/{alert_id}")
+@router.post("/predict/{alert_id}", dependencies=[Depends(require_service_or_admin)])
 def predict_flooding(alert_id: int, db: Session = Depends(get_db)):
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     segments = db.query(RoadSegment).filter_by(corridor_name=alert.geography_ref).all()

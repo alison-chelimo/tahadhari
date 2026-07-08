@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from ..auth import require_service_or_admin
 from ..database import get_db
 from ..models import Message, Profile, Alert, ActionTemplate, FloodPrediction
 from ..schemas import MessageIn, MessageOut
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_service_or_admin)])
 
 @router.post("/", response_model=MessageOut, status_code=status.HTTP_201_CREATED)
 def create_message(payload: MessageIn, db: Session = Depends(get_db)):
