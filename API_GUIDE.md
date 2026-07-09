@@ -12,7 +12,7 @@ Interactive docs available at `/docs` on either URL.
 Three credential tiers:
 
 | Tier | How | Who |
-|---|---|---|
+| --- | --- | --- |
 | **Public** | no credential | anonymous dashboard reads |
 | **Service** | `X-API-Key: <SERVICE_API_KEY>` header | `ai_layer`, the weather/KMD ingest feed — scripts, not humans |
 | **Admin** | `Authorization: Bearer <token>` from `POST /auth/login` | the one admin account |
@@ -25,11 +25,13 @@ via `/docs`). Each endpoint below states which tier it requires.
 call it (that's how you get one).
 
 Request body:
+
 ```json
 {"username": "admin", "password": "..."}
 ```
 
 Response:
+
 ```json
 {"access_token": "eyJ...", "token_type": "bearer"}
 ```
@@ -48,6 +50,7 @@ Classifies severity automatically based on rainfall, and stores the alert.
 **Endpoint:** `POST /alerts/ingest`
 
 **Request body:**
+
 ```json
 {
   "source": "KMD_test",
@@ -59,11 +62,13 @@ Classifies severity automatically based on rainfall, and stores the alert.
 ```
 
 **Notes on fields:**
+
 - `geography_type`: either `"ward"` (rural/occupation track) or `"corridor"` (urban track)
 - `geography_ref`: the ward name (e.g. `"Kisumu_Central"`) or corridor name (e.g. `"Ngong_Road"`) — must match exactly what's seeded in `road_segments.corridor_name` for the urban track to work
 - `raw_payload`: free-form JSON, not validated — store whatever the source feed gives you
 
 **Response:**
+
 ```json
 {
   "id": 1,
@@ -77,11 +82,13 @@ Classifies severity automatically based on rainfall, and stores the alert.
 ```
 
 **Severity classification logic:**
+
 - `rainfall_mm >= 60` → `"high"`
 - `rainfall_mm >= 30` → `"medium"`
 - otherwise → `"low"`
 
 **Python example:**
+
 ```python
 import requests
 
@@ -111,14 +118,16 @@ Looks up the vetted, pre-written template for a given hazard/occupation/severity
 **Endpoint:** `GET /templates/match`
 
 **Query parameters:**
+
 | Param | Required | Example |
-|---|---|---|
+| --- | --- | --- |
 | `hazard_type` | yes | `heavy_rainfall` |
 | `occupation` | yes | `farmer` |
 | `severity` | yes | `high` |
 | `language` | no (defaults to `en`) | `en` |
 
 **Response:**
+
 ```json
 [
   {
@@ -135,7 +144,7 @@ Looks up the vetted, pre-written template for a given hazard/occupation/severity
 **Important — placeholder convention:** `template_text` contains `{placeholder}` tokens that must be filled in before sending to a user. Placeholder names match source column names exactly:
 
 | Placeholder | Source |
-|---|---|
+| --- | --- |
 | `{ward}` | `alerts.geography_ref` (when `geography_type` = `"ward"`) |
 | `{corridor}` | `alerts.geography_ref` (when `geography_type` = `"corridor"`) |
 | `{rainfall_mm}` | `alerts.rainfall_mm` |
@@ -149,6 +158,7 @@ Looks up the vetted, pre-written template for a given hazard/occupation/severity
 Templates are **pre-written per language, not live-translated** — the personalization layer's job is to select the correct template and fill in placeholders, not generate or translate free text.
 
 **Python example:**
+
 ```python
 import requests
 
@@ -165,6 +175,7 @@ print(templates[0]["template_text"])
 **Adding a new template — `POST /templates/`** (**requires: admin only**, not satisfied
 by the service key — template content is vetted copy sent to real users, so only a
 logged-in admin can author it):
+
 ```json
 {"hazard_type": "heavy_rainfall", "occupation": "farmer", "severity": "high", "language": "en", "template_text": "..."}
 ```
@@ -183,6 +194,7 @@ Runs the rainfall/drainage threshold check for a corridor alert and returns flag
 **Path parameter:** `alert_id` — must be the id of an alert where `geography_type` is `"corridor"` and `geography_ref` matches a seeded `road_segments.corridor_name` (currently only `"Ngong_Road"` is seeded).
 
 **Response:**
+
 ```json
 {
   "flagged_segments": 6,
@@ -202,10 +214,12 @@ Runs the rainfall/drainage threshold check for a corridor alert and returns flag
 the time the prediction was computed).
 
 **Threshold logic:**
+
 - A segment is flagged if `alert.rainfall_mm > segment.drainage_capacity_mm`
 - Flagged as `"high"` if `rainfall_mm > drainage_capacity_mm * 1.5`, otherwise `"medium"`
 
 **Python example:**
+
 ```python
 import requests
 
@@ -226,9 +240,11 @@ WhatsApp/SMS delivery happens here; `delivery_status` stays at its DB default
 (`"pending"`).
 
 **`POST /messages/`**
+
 ```json
 {"profile_id": 1, "alert_id": 1, "template_id": 1, "final_text": "...", "channel": "whatsapp"}
 ```
+
 404 if `profile_id`/`alert_id`/`template_id`/`flood_prediction_id` doesn't reference an
 existing row. Returns 201 with the full `MessageOut` record (including generated `id`
 and `sent_at`).
@@ -242,9 +258,11 @@ and `sent_at`).
 Persists a classified WhatsApp/SMS reply to a message.
 
 **`POST /feedback/`**
+
 ```json
 {"message_id": 1, "profile_id": 1, "feedback_type": "helpful", "feedback_text": "..."}
 ```
+
 `feedback_type` must be one of `helpful`, `not_helpful`, `incorrect_location`,
 `incorrect_timing`, `unclear`, `other`. 404 if `message_id`/`profile_id` doesn't exist;
 **400** if `profile_id` doesn't match the `profile_id` actually on `message_id`'s message
@@ -265,6 +283,7 @@ segments rather than occupation. `channel` records which channel to message goin
 (WhatsApp gets richer messages; SMS gets the same advice as plain text).
 
 **`POST /profiles/`**
+
 ```json
 {
   "phone_number": "+254712345099", "channel": "whatsapp", "user_type": "rural",
@@ -272,7 +291,9 @@ segments rather than occupation. `channel` records which channel to message goin
   "registration_source": "whatsapp_keyword"
 }
 ```
+
 **Conditional validation (422 if violated):**
+
 - `user_type: "rural"` requires `ward` and `occupation`
 - `user_type: "urban"` requires `route_id`, which must match `^[A-Za-z0-9_]+$` (same rule
   `ai_layer` uses — a `road_segments.segment_name` value, e.g. `"Adams_Arcade"`)
@@ -296,17 +317,21 @@ limitations"). The payload shape is a provider-agnostic placeholder — no real 
 (Twilio/Meta WhatsApp Business API/Africa's Talking) is integrated yet.
 
 **`POST /registration/webhook`**
+
 ```json
 {"phone_number": "+254712345099", "channel": "sms", "text": "REGISTER"}
 ```
+
 Matching is case-insensitive, against the whole message or the keyword as the leading word
 (`"register"` or `"register please"` both match). The keyword set defaults to `REGISTER` and
 is overridable via the `REGISTRATION_KEYWORDS` env var (comma-separated).
 
 **Response:**
+
 ```json
 {"matched": true, "registration_request_id": 1, "keyword": "register"}
 ```
+
 `matched: false` (with `registration_request_id`/`keyword` both `null`) if no keyword was
 found — nothing is persisted in that case.
 
@@ -315,7 +340,7 @@ found — nothing is persisted in that case.
 ## Schema reference (for context)
 
 | Table | Key columns |
-|---|---|
+| --- | --- |
 | `alerts` | id, hazard_type, severity, geography_type, geography_ref, rainfall_mm, source, raw_payload, created_at |
 | `profiles` | id, phone_number, channel, language, user_type, occupation, ward, route_id, key_asset, registration_source, registered_by |
 | `action_templates` | id, hazard_type, occupation, severity, language, template_text |
@@ -333,8 +358,9 @@ found — nothing is persisted in that case.
 **Action templates (6):** heavy_rainfall × {farmer, fisherman, driver} × {high, medium}, language `en`
 
 **Road segments (7), corridor `Ngong_Road`:**
+
 | Segment | Drainage capacity (mm) |
-|---|---|
+| --- | --- |
 | Dagoretti_Corner | 30 |
 | Riara_Road_Junction | 25 |
 | Adams_Arcade | 20 |
