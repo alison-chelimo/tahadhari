@@ -162,6 +162,43 @@ def test_list_profiles_ordered_by_id(client):
     assert second.json()["id"] in ids
 
 
+def test_update_profile_location_success(client, db_session):
+    profile = Profile(
+        phone_number="+254711000080", channel="whatsapp", user_type="rural",
+        occupation="farmer", ward="Kisumu_Central", registration_source="whatsapp_keyword",
+    )
+    db_session.add(profile)
+    db_session.commit()
+    db_session.refresh(profile)
+
+    response = client.patch(
+        f"/profiles/{profile.id}/location",
+        json={"lat": -1.4536, "lon": 36.9721, "place_name": "Kitengela, Kenya"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved_lat"] == -1.4536
+    assert body["resolved_lon"] == 36.9721
+    assert body["resolved_place_name"] == "Kitengela, Kenya"
+
+
+def test_update_profile_location_not_found_404(client):
+    response = client.patch(
+        "/profiles/999999/location",
+        json={"lat": 0.0, "lon": 0.0, "place_name": "Nowhere"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 404
+
+
+def test_update_profile_location_requires_credential_401(client):
+    response = client.patch(
+        "/profiles/1/location", json={"lat": 0.0, "lon": 0.0, "place_name": "Nowhere"},
+    )
+    assert response.status_code == 401
+
+
 def test_profiles_service_key_sufficient_by_design(client):
     """Profile.phone_number is PII, but profiles is intentionally gated the same as
     Message/Feedback (service key or admin), not admin-only like template authoring --

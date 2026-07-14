@@ -13,6 +13,8 @@ from ..schemas import (
     Message,
     FeedbackIn,
     Feedback,
+    Profile,
+    RegistrationRequest,
 )
 
 logger = logging.getLogger("ai_layer.clients.alerts_api")
@@ -171,3 +173,32 @@ class AlertsApiClient:
         payload["feedback_type"] = feedback_in.feedback_type.value
         response = await self._request("POST", "/feedback/", json=payload)
         return Feedback(**response.json())
+
+    async def get_profile(self, profile_id: int) -> Profile:
+        response = await self._request("GET", f"/profiles/{profile_id}")
+        return Profile(**response.json())
+
+    async def update_profile_location(
+        self, profile_id: int, lat: float, lon: float, place_name: str
+    ) -> Profile:
+        response = await self._request(
+            "PATCH", f"/profiles/{profile_id}/location",
+            json={"lat": lat, "lon": lon, "place_name": place_name},
+        )
+        return Profile(**response.json())
+
+    async def list_registration_requests(self, *, state: str) -> list[RegistrationRequest]:
+        response = await self._request("GET", "/registration/requests", params={"state": state})
+        return [RegistrationRequest(**row) for row in response.json()]
+
+    async def mark_registration_request_delivered(self, request_id: int) -> RegistrationRequest:
+        response = await self._request(
+            "PATCH", f"/registration/requests/{request_id}/state", json={"state": "weather_delivered"}
+        )
+        return RegistrationRequest(**response.json())
+
+    async def mark_registration_request_failed(self, request_id: int) -> RegistrationRequest:
+        response = await self._request(
+            "PATCH", f"/registration/requests/{request_id}/state", json={"state": "failed"}
+        )
+        return RegistrationRequest(**response.json())

@@ -15,7 +15,10 @@ async def select_content(
         alert.id, alert.geography_type, profile.id, profile.language,
     )
 
-    if alert.geography_type == "ward":
+    # "point" (per-user, coordinate-based alerts from the location/weather conversation
+    # flow -- see services/location_weather.py) has no RoadSegment/corridor concept, so
+    # it reuses the ward track's occupation-template matching, same as "ward".
+    if alert.geography_type in ("ward", "point"):
         return await _select_template(alert, profile, client)
     if alert.geography_type == "corridor":
         return await _select_prediction(alert, profile, client)

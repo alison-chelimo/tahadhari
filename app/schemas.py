@@ -1,6 +1,6 @@
 import re
 from pydantic import BaseModel, field_validator, model_validator
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from datetime import datetime
 from enum import Enum
 
@@ -145,9 +145,18 @@ class ProfileIn(_ProfileFields):
 
 class ProfileOut(_ProfileFields):
     id: int
+    resolved_lat: Optional[float] = None
+    resolved_lon: Optional[float] = None
+    resolved_place_name: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class LocationUpdateIn(BaseModel):
+    lat: float
+    lon: float
+    place_name: str
 
 
 class InboundMessageIn(BaseModel):
@@ -163,6 +172,15 @@ class RegistrationWebhookOut(BaseModel):
     matched: bool
     registration_request_id: Optional[int] = None
     keyword: Optional[str] = None
+    # Names the RegistrationRequest.state this request is now in (or None for the
+    # legacy non-conversational path) -- tells a caller/future gateway what to say to
+    # the user next: "awaiting_location" -> ask for location, "location_resolved" ->
+    # "checking the weather for you", "weather_delivered"/"failed" -> no further prompt.
+    prompt: Optional[str] = None
+
+
+class RegistrationRequestStateIn(BaseModel):
+    state: Literal["weather_delivered", "failed"]
 
 
 class RegistrationRequestOut(BaseModel):
@@ -172,6 +190,8 @@ class RegistrationRequestOut(BaseModel):
     raw_text: str
     matched_keyword: Optional[str]
     profile_id: Optional[int]
+    state: Optional[str] = None
+    raw_location_text: Optional[str] = None
     resolved_at: Optional[datetime]
     created_at: datetime
 

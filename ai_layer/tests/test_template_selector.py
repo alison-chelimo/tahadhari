@@ -32,6 +32,23 @@ async def test_select_content_ward_match(sample_alert_ward, sample_profile_farme
     )
 
 
+async def test_select_content_point_match(sample_alert_ward, sample_profile_farmer, sample_template):
+    from ai_layer.schemas import Alert
+
+    point_alert = Alert(
+        id=5, hazard_type=sample_alert_ward.hazard_type, severity=sample_alert_ward.severity,
+        geography_type="point", geography_ref="Kitengela, Kenya",
+        rainfall_mm=sample_alert_ward.rainfall_mm, created_at=sample_alert_ward.created_at,
+    )
+    mock_client = AsyncMock()
+    mock_client.match_templates = AsyncMock(return_value=[sample_template])
+
+    result = await select_content(point_alert, sample_profile_farmer, client=mock_client)
+
+    assert isinstance(result, TemplateMatch)
+    assert result.template == sample_template
+
+
 async def test_select_content_corridor_no_match(sample_alert_ward):
     from ai_layer.schemas import Alert, Profile
 

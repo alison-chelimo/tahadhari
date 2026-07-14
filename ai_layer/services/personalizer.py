@@ -4,7 +4,10 @@ import re
 from pydantic import BaseModel, ValidationError
 
 from ..clients.alerts_api import AlertsApiClient, AlertsApiError
-from ..clients.claude_client import ClaudeClient, ClaudeClientError
+# Claude disabled in favor of OpenAI -- switch back by uncommenting this import and
+# swapping OpenAIClient/OpenAIClientError below back to ClaudeClient/ClaudeClientError.
+# from ..clients.claude_client import ClaudeClient, ClaudeClientError
+from ..clients.openai_client import OpenAIClient, OpenAIClientError
 from ..dead_letter import write_dead_letter
 from ..schemas import Alert, Profile, TemplateMatch, PredictionMatch, MessageIn, Message
 
@@ -30,7 +33,7 @@ class LeftoverPlaceholderError(PersonalizationError):
         self.leftover_text = leftover_text
 
 
-class InvalidClaudeResponseError(PersonalizationError):
+class InvalidLLMResponseError(PersonalizationError):
     pass
 
 
@@ -49,7 +52,10 @@ def build_placeholder_values(alert: Alert, profile: Profile) -> dict[str, str]:
     is what raises MissingPlaceholderValueError when a template references a key that
     isn't here."""
     values: dict[str, str] = {"rainfall_mm": str(alert.rainfall_mm)}
-    if alert.geography_type == "ward":
+    if alert.geography_type in ("ward", "point"):
+        # "point" alerts (location/weather conversation flow) share ward-track templates
+        # (see template_selector.py) and so fill the same {ward} placeholder, using the
+        # geocoded place name in its place.
         values["ward"] = alert.geography_ref
     elif alert.geography_type == "corridor":
         values["corridor"] = alert.geography_ref
@@ -93,19 +99,19 @@ _GRAMMAR_SYSTEM_PROMPT = (
 )
 
 
-async def _apply_grammar_pass(filled_text: str, claude_client: ClaudeClient) -> str:
+async def _apply_grammar_pass(filled_text: str, openai_client: OpenAIClient) -> str:
     try:
         corrected = (
-            await claude_client.create_text(
+            await openai_client.create_text(
                 system=_GRAMMAR_SYSTEM_PROMPT, user_content=filled_text, max_tokens=512,
             )
         ).strip()
         if not corrected:
-            raise InvalidClaudeResponseError("empty response from grammar pass")
+            raise InvalidLLMResponseError("empty response from grammar pass")
         return corrected
-    except (ClaudeClientError, InvalidClaudeResponseError) as exc:
+    except (OpenAIClientError, InvalidLLMResponseError) as exc:
         logger.error(
-            "Claude grammar pass failed/invalid; FALLING BACK to unedited template text. "
+            "OpenAI grammar pass failed/invalid; FALLING BACK to unedited template text. "
             "error=%s filled_text=%r", exc, filled_text,
         )
         return filled_text
@@ -119,24 +125,24 @@ _FLOOD_SYSTEM_PROMPT = (
 )
 
 
-async def _build_flood_warning_text(content: PredictionMatch, claude_client: ClaudeClient) -> str:
+async def _build_flood_warning_text(content: PredictionMatch, openai_client: OpenAIClient) -> str:
     user_content = (
         f"segment_name={content.segment_name}\nrisk_level={content.risk_level}\n"
         f"window_start={content.window_start}\nwindow_end={content.window_end}\n"
         f"route_id={content.profile.route_id}\nlanguage={content.profile.language}"
     )
     try:
-        draft = await claude_client.parse_structured(
+        draft = await openai_client.parse_structured(
             system=_FLOOD_SYSTEM_PROMPT, user_content=user_content,
             output_model=FloodWarningDraft, max_tokens=512,
         )
         text = draft.message_text.strip()
         if not text:
-            raise InvalidClaudeResponseError("empty message_text")
+            raise InvalidLLMResponseError("empty message_text")
         return text
-    except (ClaudeClientError, ValidationError, InvalidClaudeResponseError) as exc:
+    except (OpenAIClientError, ValidationError, InvalidLLMResponseError) as exc:
         logger.error(
-            "Claude flood-warning generation failed/invalid; FALLING BACK to plain "
+            "OpenAI flood-warning generation failed/invalid; FALLING BACK to plain "
             "structured-field sentence. error=%s segment=%s risk=%s",
             exc, content.segment_name, content.risk_level,
         )
@@ -158,18 +164,18 @@ async def personalize_message(
     profile: Profile,
     content: TemplateMatch | PredictionMatch,
     *,
-    claude_client: ClaudeClient | None = None,
+    openai_client: OpenAIClient | None = None,
     alerts_api_client: AlertsApiClient | None = None,
 ) -> Message:
-    claude_client = claude_client or ClaudeClient()
+    openai_client = openai_client or OpenAIClient()
 
     if isinstance(content, TemplateMatch):
         values = build_placeholder_values(alert, profile)
         filled = fill_placeholders(content.template.template_text, values)
-        final_text = await _apply_grammar_pass(filled, claude_client)
+        final_text = await _apply_grammar_pass(filled, openai_client)
         template_id, flood_prediction_id = content.template.id, None
     elif isinstance(content, PredictionMatch):
-        final_text = await _build_flood_warning_text(content, claude_client)
+        final_text = await _build_flood_warning_text(content, openai_client)
         template_id, flood_prediction_id = None, content.flood_prediction_id
     else:
         raise TypeError(f"personalize_message expects TemplateMatch or PredictionMatch, got {type(content)}")
@@ -179,6 +185,72 @@ async def personalize_message(
         alert_id=alert.id,
         template_id=template_id,
         flood_prediction_id=flood_prediction_id,
+        final_text=final_text,
+        channel=profile.channel,
+    )
+    return await _post_message_with_dead_letter(message_in, alerts_api_client)
+
+
+_WEATHER_EXPLAINER_SYSTEM_PROMPT = (
+    "You write a short, friendly, easy-to-understand WhatsApp/SMS message explaining "
+    "current weather risk to a specific person, given (1) an official templated safety "
+    "instruction and (2) raw weather data. Weave both into ONE natural message: keep "
+    "every instruction, number, and place name from the templated text intact and "
+    "factually unchanged, but make the tone warmer and easier to understand for the "
+    "person's stated occupation. Do NOT invent data not present in the input. Respond "
+    "ONLY via the required structured schema."
+)
+
+
+class WeatherExplainerDraft(BaseModel):
+    message_text: str
+
+
+async def personalize_weather_message(
+    alert: Alert,
+    profile: Profile,
+    template_match: TemplateMatch,
+    raw_weather: dict,
+    *,
+    openai_client: OpenAIClient | None = None,
+    alerts_api_client: AlertsApiClient | None = None,
+) -> Message:
+    """Combines the existing template pipeline with an LLM-authored, easier-to-understand
+    explanation, for the location/weather conversation flow (see
+    ai_layer/services/location_weather.py). Unlike personalize_message()'s grammar-only
+    pass, this one lets the LLM weave in raw_weather -- but on any LLM failure it falls
+    back to the same plain filled-template text used everywhere else in this module."""
+    openai_client = openai_client or OpenAIClient()
+
+    values = build_placeholder_values(alert, profile)
+    filled = fill_placeholders(template_match.template.template_text, values)
+
+    user_content = (
+        f"templated_instruction={filled}\n"
+        f"raw_weather={raw_weather}\n"
+        f"occupation={profile.occupation}\nlanguage={profile.language}\n"
+        f"place={alert.geography_ref}"
+    )
+    try:
+        draft = await openai_client.parse_structured(
+            system=_WEATHER_EXPLAINER_SYSTEM_PROMPT, user_content=user_content,
+            output_model=WeatherExplainerDraft, max_tokens=512,
+        )
+        final_text = draft.message_text.strip()
+        if not final_text:
+            raise InvalidLLMResponseError("empty message_text")
+    except (OpenAIClientError, ValidationError, InvalidLLMResponseError) as exc:
+        logger.error(
+            "Weather explainer LLM failed/invalid; FALLING BACK to plain filled template. "
+            "error=%s filled_text=%r", exc, filled,
+        )
+        final_text = filled
+
+    message_in = MessageIn(
+        profile_id=profile.id,
+        alert_id=alert.id,
+        template_id=template_match.template.id,
+        flood_prediction_id=None,
         final_text=final_text,
         channel=profile.channel,
     )

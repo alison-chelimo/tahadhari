@@ -311,10 +311,19 @@ segments rather than occupation. `channel` records which channel to message goin
 **Requires:** service key or admin
 
 Receives an inbound WhatsApp/SMS message and detects whether it's a registration keyword.
-This does **not** create a `Profile` — it only logs the intent as a `RegistrationRequest` for
-a partner/admin to follow up on (there's no multi-turn conversation flow yet; see "Known
-limitations"). The payload shape is a provider-agnostic placeholder — no real gateway
-(Twilio/Meta WhatsApp Business API/Africa's Talking) is integrated yet.
+This does **not** create a `Profile` — a `Profile` is still always created via a separate
+manual `POST /profiles/` call (at any point in the flow below). What it does do is drive a
+small conversation state machine on `RegistrationRequest`: the keyword message starts it
+(`state: "awaiting_location"`), and the very next inbound message from that phone number is
+then treated **unconditionally** as the user's free-text location reply (no keyword check),
+advancing to `state: "location_resolved"`. `ai_layer/location_poll.py` picks up
+`location_resolved` requests, geocodes the location, pulls Open-Meteo weather for it, and
+produces a personalized reply — see `CLAUDE.md`'s "Location/weather conversation flow"
+section for the full pipeline. Full self-service registration (occupation, user_type, etc.
+via conversation) is still out of scope; see "Known limitations". The payload shape is a
+provider-agnostic placeholder — no real gateway (Twilio/Meta WhatsApp Business API/Africa's
+Talking) is integrated yet, so nothing is actually sent back to the user; a future gateway
+integration would use `prompt` (below) to decide what to say next.
 
 **`POST /registration/webhook`**
 
@@ -324,16 +333,43 @@ limitations"). The payload shape is a provider-agnostic placeholder — no real 
 
 Matching is case-insensitive, against the whole message or the keyword as the leading word
 (`"register"` or `"register please"` both match). The keyword set defaults to `REGISTER` and
-is overridable via the `REGISTRATION_KEYWORDS` env var (comma-separated).
+is overridable via the `REGISTRATION_KEYWORDS` env var (comma-separated). This keyword check
+only runs when the phone number has no request already in progress (see above) — once
+`awaiting_location` exists, the next message is captured as the location reply regardless of
+its content.
 
 **Response:**
 
 ```json
-{"matched": true, "registration_request_id": 1, "keyword": "register"}
+{"matched": true, "registration_request_id": 1, "keyword": "register", "prompt": "awaiting_location"}
 ```
 
-`matched: false` (with `registration_request_id`/`keyword` both `null`) if no keyword was
-found — nothing is persisted in that case.
+`prompt` names the request's current state (`awaiting_location`, `location_resolved`,
+`weather_delivered`, or `failed`) — what a caller/gateway should say to the user next.
+`matched: false` (with `registration_request_id`/`keyword`/`prompt` all `null`) if no keyword
+was found and no conversation was already in progress — nothing is persisted in that case.
+
+**`GET /registration/requests`** — `resolved` (bool) and `state` (string) query params filter
+the list; `state` matches `awaiting_location`/`location_resolved`/`weather_delivered`/`failed`.
+
+**`PATCH /registration/requests/{request_id}/state`** — used by `ai_layer/location_poll.py` to
+advance a request to `weather_delivered` (also stamps `resolved_at`) or `failed` once it's
+done processing it. Body: `{"state": "weather_delivered"}` or `{"state": "failed"}`.
+
+## 7a. Profile location update
+
+**Requires:** service key or admin
+
+**`PATCH /profiles/{profile_id}/location`** — persists a geocoded location onto a profile.
+Called by `ai_layer/location_poll.py` after a successful Google Maps geocode, not by end
+users directly.
+
+```json
+{"lat": -1.4536, "lon": 36.9721, "place_name": "Kitengela, Kenya"}
+```
+
+404 if the profile doesn't exist. Returns the updated `ProfileOut` (now including
+`resolved_lat`/`resolved_lon`/`resolved_place_name`).
 
 ---
 
@@ -342,13 +378,13 @@ found — nothing is persisted in that case.
 | Table | Key columns |
 | --- | --- |
 | `alerts` | id, hazard_type, severity, geography_type, geography_ref, rainfall_mm, source, raw_payload, created_at |
-| `profiles` | id, phone_number, channel, language, user_type, occupation, ward, route_id, key_asset, registration_source, registered_by |
+| `profiles` | id, phone_number, channel, language, user_type, occupation, ward, route_id, key_asset, registration_source, registered_by, resolved_lat, resolved_lon, resolved_place_name |
 | `action_templates` | id, hazard_type, occupation, severity, language, template_text |
 | `road_segments` | id, corridor_name, segment_name, start/end lat/lon, drainage_capacity_mm |
 | `flood_predictions` | id, alert_id, segment_id, risk_level, window_start, window_end |
 | `messages` | id, profile_id, alert_id, template_id, flood_prediction_id, final_text, channel, delivery_status, sent_at |
 | `feedback` | id, message_id, profile_id, feedback_type, feedback_text, created_at |
-| `registration_requests` | id, phone_number, channel, raw_text, matched_keyword, created_at |
+| `registration_requests` | id, phone_number, channel, raw_text, matched_keyword, profile_id, state, raw_location_text, resolved_at, created_at |
 | `admin_users` | id, username, hashed_password, created_at |
 
 ---
@@ -380,14 +416,18 @@ found — nothing is persisted in that case.
 - No real WhatsApp/SMS gateway is integrated — the registration webhook's payload shape is a
   provider-agnostic placeholder; mapping a real vendor's webhook to it is future work
 - The registration keyword set is a minimal, single-language (English) MVP list
-- No multi-turn conversational registration flow — the webhook only detects and logs intent
-  (`RegistrationRequest`); completing a profile is a separate manual `POST /profiles/` call.
+- Full self-service registration is not yet conversational — the webhook now drives a small
+  location-only state machine (keyword → "where are you?" → geocode + weather reply, see
+  "Registration webhook" above and `CLAUDE.md`'s "Location/weather conversation flow"), but
+  occupation/user_type/etc. still require a separate manual `POST /profiles/` call.
   `POST /profiles/` does resolve any matching pending `RegistrationRequest` for that phone
-  number (see "Registration webhook" above), but there's no automated hand-off in between.
+  number (setting `profile_id`/`resolved_at`) without interrupting an in-progress location
+  conversation, which is keyed off `state`, not `resolved_at`.
 - USSD support is a planned later improvement, once the WhatsApp/SMS flow is proven
 - No Alembic/migration framework — `app/main.py` only calls `Base.metadata.create_all`, which
   creates missing tables but does not `ALTER` existing ones. Adding a `NOT NULL` column (as
   `profiles.registration_source` did) needs a manual `ALTER TABLE` on any already-provisioned
-  DB — run `python migrate_profiles_registration_columns.py` once against such a database
-  before deploying this change to it (no-op against a fresh DB or one already migrated)
+  DB — run `python migrate_profiles_registration_columns.py` and
+  `python migrate_profiles_location_columns.py` once against such a database before deploying
+  those changes to it (both are no-ops against a fresh DB or one already migrated)
 - One admin account only — no signup flow, no password reset (rotate via `seed_admin.py` against a fresh DB, or update the row directly)
