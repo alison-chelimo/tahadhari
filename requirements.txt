@@ -26,4 +26,5 @@ pytest-asyncio
 pytest-mock
 pytest-cov
 pyjwt
+supabase
 bcrypt
