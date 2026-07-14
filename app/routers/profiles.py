@@ -4,7 +4,7 @@ from sqlalchemy.sql import func
 from ..auth import require_service_or_admin
 from ..database import commit_or_error, get_db
 from ..models import Profile, RegistrationRequest
-from ..schemas import ProfileIn, ProfileOut
+from ..schemas import LocationUpdateIn, ProfileIn, ProfileOut
 
 router = APIRouter(dependencies=[Depends(require_service_or_admin)])
 
@@ -37,6 +37,24 @@ def create_profile(payload: ProfileIn, db: Session = Depends(get_db)):
     db.commit()
 
     return db_profile
+
+
+@router.patch("/{profile_id}/location", response_model=ProfileOut)
+def update_profile_location(profile_id: int, payload: LocationUpdateIn, db: Session = Depends(get_db)):
+    """Persists a geocoded location onto a profile -- called by ai_layer's
+    location-weather poller after a successful GoogleMapsClient.geocode() (see
+    ai_layer/services/location_weather.py). Does not touch registration_requests;
+    request-state advancement is a separate call to
+    PATCH /registration/requests/{id}/state."""
+    profile = db.query(Profile).filter(Profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile {profile_id} not found")
+
+    profile.resolved_lat = payload.lat
+    profile.resolved_lon = payload.lon
+    profile.resolved_place_name = payload.place_name
+    commit_or_error(db, profile, resource_name="profile")
+    return profile
 
 
 @router.get("/{profile_id}", response_model=ProfileOut)

@@ -1,8 +1,12 @@
 """End-to-end example run of the ai_layer pipeline: ingest an alert against the real
 Tahadhari API, select content (template or flood prediction), personalize it with
-Claude, then classify a simulated feedback reply. Requires `uvicorn app.main:app
---reload` running and (ideally) a real ANTHROPIC_API_KEY -- personalize_message and
-classify_feedback both degrade gracefully rather than crash if Claude calls fail.
+OpenAI, then classify a simulated feedback reply. Requires `uvicorn app.main:app
+--reload` running and (ideally) a real OPENAI_API_KEY -- personalize_message and
+classify_feedback both degrade gracefully rather than crash if OpenAI calls fail.
+
+Claude is disabled in favor of OpenAI for now (see ai_layer/clients/claude_client.py,
+kept intact) -- switch back by uncommenting the import below and swapping OpenAIClient
+back to ClaudeClient throughout this file.
 
 Run with: python -m ai_layer.main
 """
@@ -11,7 +15,8 @@ import asyncio
 import logging
 
 from .clients.alerts_api import AlertsApiClient
-from .clients.claude_client import ClaudeClient
+# from .clients.claude_client import ClaudeClient
+from .clients.openai_client import OpenAIClient
 from .clients.profiles_repo import MockProfilesRepo
 from .schemas import AlertIn, NoMatch
 from .services.feedback_classifier import classify_feedback
@@ -46,7 +51,7 @@ async def run_scenario(
     scenario: dict,
     profiles_repo: MockProfilesRepo,
     alerts_api_client: AlertsApiClient,
-    claude_client: ClaudeClient,
+    openai_client: OpenAIClient,
 ) -> None:
     logger.info("--- scenario: %s ---", scenario["name"])
 
@@ -61,12 +66,12 @@ async def run_scenario(
         return
 
     message = await personalize_message(
-        alert, profile, content, claude_client=claude_client, alerts_api_client=alerts_api_client,
+        alert, profile, content, openai_client=openai_client, alerts_api_client=alerts_api_client,
     )
     logger.info("Created message id=%s final_text=%r", message.id, message.final_text)
 
     feedback = await classify_feedback(
-        message, scenario["reply_text"], claude_client=claude_client, alerts_api_client=alerts_api_client,
+        message, scenario["reply_text"], openai_client=openai_client, alerts_api_client=alerts_api_client,
     )
     logger.info(
         "Classified feedback id=%s category=%s confidence=%s",
@@ -77,13 +82,13 @@ async def run_scenario(
 async def main() -> None:
     profiles_repo = MockProfilesRepo()
     alerts_api_client = AlertsApiClient()
-    claude_client = ClaudeClient()
+    openai_client = OpenAIClient()
     try:
         for scenario in _SCENARIOS:
-            await run_scenario(scenario, profiles_repo, alerts_api_client, claude_client)
+            await run_scenario(scenario, profiles_repo, alerts_api_client, openai_client)
     finally:
         await alerts_api_client.aclose()
-        await claude_client.aclose()
+        await openai_client.aclose()
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ Tahadhari turns weather warnings into clear, specific action. Farmers, fishermen
 ## Stack
 
 - **Backend API** (`app/`): FastAPI + SQLAlchemy, Postgres in production / SQLite in-memory for tests.
-- **AI layer** (`ai_layer/`): a separate package that calls Claude to personalize messages and classify feedback, talking to the backend API over HTTP.
+- **AI layer** (`ai_layer/`): a separate package that calls OpenAI (ChatGPT) to personalize messages and classify feedback, talking to the backend API over HTTP. Claude support is kept intact but disabled — see `ai_layer/clients/claude_client.py`. Also includes an ICPAC WFS poller (`ai_layer/icpac_poll.py`) that ingests hazard data as alerts, and a location/weather poller (`ai_layer/location_poll.py`) that geocodes a user's free-text location reply via Google Maps, pulls Open-Meteo rainfall for it, and ingests it through the same alert pipeline.
 
 See [`API_GUIDE.md`](./API_GUIDE.md) for the full endpoint reference.
 
@@ -15,7 +15,7 @@ See [`API_GUIDE.md`](./API_GUIDE.md) for the full endpoint reference.
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in DATABASE_URL, SERVICE_API_KEY, JWT_SECRET_KEY, etc.
+cp .env.example .env   # fill in DATABASE_URL, SERVICE_API_KEY, JWT_SECRET_KEY, OPENAI_API_KEY, GOOGLE_MAPS_API_KEY, etc.
 uvicorn app.main:app --reload
 ```
 
@@ -34,8 +34,8 @@ pytest --cov=app --cov=ai_layer --cov-report=term-missing --cov-fail-under=80
 ```
 
 Tests run fully offline: the backend suite overrides the database with in-memory SQLite,
-and the `ai_layer` suite mocks all Claude/HTTP calls, so no real database, `.env`, or API
-keys are required to run them locally.
+and the `ai_layer` suite mocks all OpenAI/ICPAC/HTTP calls, so no real database, `.env`,
+or API keys are required to run them locally.
 
 ## Contributing / CI
 

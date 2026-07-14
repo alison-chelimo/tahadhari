@@ -3,7 +3,10 @@ import logging
 from pydantic import ValidationError
 
 from ..clients.alerts_api import AlertsApiClient, AlertsApiError
-from ..clients.claude_client import ClaudeClient, ClaudeClientError
+# Claude disabled in favor of OpenAI -- switch back by uncommenting this import and
+# swapping OpenAIClient/OpenAIClientError below back to ClaudeClient/ClaudeClientError.
+# from ..clients.claude_client import ClaudeClient, ClaudeClientError
+from ..clients.openai_client import OpenAIClient, OpenAIClientError
 from ..dead_letter import write_dead_letter
 from ..schemas import Feedback, FeedbackCategory, FeedbackClassification, FeedbackIn, Message
 
@@ -35,27 +38,27 @@ _STRICT_REMINDER = (
 
 _FALLBACK_CLASSIFICATION = FeedbackClassification(category=FeedbackCategory.OTHER, confidence=0.0)
 
-_RETRYABLE = (ClaudeClientError, ValidationError)
+_RETRYABLE = (OpenAIClientError, ValidationError)
 
 
-async def _classify_with_retry(reply_text: str, claude_client: ClaudeClient) -> FeedbackClassification:
+async def _classify_with_retry(reply_text: str, openai_client: OpenAIClient) -> FeedbackClassification:
     try:
-        return await claude_client.parse_structured(
+        return await openai_client.parse_structured(
             system=_SYSTEM_PROMPT, user_content=reply_text, output_model=FeedbackClassification,
         )
     except _RETRYABLE as exc:
         logger.warning(
-            "Claude feedback classification failed on first attempt; retrying once with "
+            "OpenAI feedback classification failed on first attempt; retrying once with "
             "a stricter prompt. error=%s reply_text=%r", exc, reply_text,
         )
         try:
-            return await claude_client.parse_structured(
+            return await openai_client.parse_structured(
                 system=_SYSTEM_PROMPT + _STRICT_REMINDER, user_content=reply_text,
                 output_model=FeedbackClassification,
             )
         except _RETRYABLE as exc2:
             logger.error(
-                "Claude feedback classification failed on retry; FALLING BACK to "
+                "OpenAI feedback classification failed on retry; FALLING BACK to "
                 "category=OTHER confidence=0.0. error=%s reply_text=%r", exc2, reply_text,
             )
             return _FALLBACK_CLASSIFICATION
@@ -65,11 +68,11 @@ async def classify_feedback(
     message: Message,
     reply_text: str,
     *,
-    claude_client: ClaudeClient | None = None,
+    openai_client: OpenAIClient | None = None,
     alerts_api_client: AlertsApiClient | None = None,
 ) -> Feedback:
-    claude_client = claude_client or ClaudeClient()
-    classification = await _classify_with_retry(reply_text, claude_client)
+    openai_client = openai_client or OpenAIClient()
+    classification = await _classify_with_retry(reply_text, openai_client)
 
     feedback_in = FeedbackIn(
         message_id=message.id,

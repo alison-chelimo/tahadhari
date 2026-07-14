@@ -11,9 +11,11 @@ ROUTE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 # ---- mirrors of Alison's DB-backed resources ----
 
 class AlertIn(BaseModel):
-    """Mirrors app.schemas.AlertIn -- used when ai_layer ingests a new alert via the API."""
+    """Mirrors app.schemas.AlertIn -- used when ai_layer ingests a new alert via the API.
+    "point" is a per-user, coordinate-based alert (see services/location_weather.py),
+    distinct from the broadcast-style "ward"/"corridor" tracks."""
     source: str
-    geography_type: Literal["ward", "corridor"]
+    geography_type: Literal["ward", "corridor", "point"]
     geography_ref: str
     rainfall_mm: float
     raw_payload: Optional[dict[str, Any]] = None
@@ -24,7 +26,7 @@ class Alert(BaseModel):
     id: int
     hazard_type: str
     severity: str
-    geography_type: Literal["ward", "corridor"]
+    geography_type: Literal["ward", "corridor", "point"]
     geography_ref: str
     rainfall_mm: float
     created_at: datetime
@@ -55,6 +57,9 @@ class Profile(BaseModel):
     key_asset: Optional[str] = None
     registration_source: Optional[str] = None
     registered_by: Optional[str] = None
+    resolved_lat: Optional[float] = None
+    resolved_lon: Optional[float] = None
+    resolved_place_name: Optional[str] = None
 
     @field_validator("route_id")
     @classmethod
@@ -178,3 +183,32 @@ class Feedback(BaseModel):
     confidence: Optional[float] = None
     classification_failed: bool = False
     created_at: Optional[datetime] = None
+
+
+# ---- location/weather conversation flow ----
+
+class GeocodeResult(BaseModel):
+    """Result of GoogleMapsClient.geocode() -- the first Geocoding API result."""
+    latitude: float
+    longitude: float
+    formatted_address: str
+
+
+class WeatherResult(BaseModel):
+    """Result of OpenMeteoClient.get_precipitation()."""
+    rainfall_mm: float
+    raw: dict[str, Any]
+
+
+class RegistrationRequest(BaseModel):
+    """Mirrors app.schemas.RegistrationRequestOut."""
+    id: int
+    phone_number: str
+    channel: str
+    raw_text: str
+    matched_keyword: Optional[str] = None
+    profile_id: Optional[int] = None
+    state: Optional[str] = None
+    raw_location_text: Optional[str] = None
+    resolved_at: Optional[datetime] = None
+    created_at: datetime
