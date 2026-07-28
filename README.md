@@ -12,14 +12,50 @@ See [`API_GUIDE.md`](./API_GUIDE.md) for the full endpoint reference.
 ## Local setup
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # fill in DATABASE_URL, SUPABASE_URL, SUPABASE_KEY, SERVICE_API_KEY, JWT_SECRET_KEY, OPENAI_API_KEY, GOOGLE_MAPS_API_KEY, etc.
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 The API is then available at `http://localhost:8000` (interactive docs at `/docs`).
+
+### Local Telegram E2E run (recommended)
+
+For Telegram button-flow testing, run the backend with the dev reset command enabled:
+
+```bash
+source .venv/bin/activate
+set -a && source .env && set +a
+export TELEGRAM_ENABLE_DEV_RESET=true
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Expose local API over HTTPS (required by Telegram webhooks):
+
+```bash
+cloudflared tunnel --protocol http2 --url http://localhost:8000
+```
+
+Then set webhook using the tunnel URL (replace `<TUNNEL_URL>`):
+
+```bash
+set -a && source .env && set +a
+curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+   -d "url=<TUNNEL_URL>/telegram/webhook" \
+   -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" \
+   -d 'allowed_updates=["message","callback_query"]'
+```
+
+If your production DB credentials are unavailable during local testing, you can temporarily run with SQLite:
+
+```bash
+set -a && source .env && set +a
+export DATABASE_URL='sqlite:///./local_test.db'
+export TELEGRAM_ENABLE_DEV_RESET=true
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
 
 ## Telegram onboarding flow
 
