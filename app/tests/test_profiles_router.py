@@ -126,6 +126,27 @@ def test_get_profile_not_found_404(client):
     assert response.status_code == 404
 
 
+def test_get_profile_by_phone_success(client, db_session):
+    profile = Profile(
+        phone_number="5323974138", channel="telegram", user_type="rural",
+        occupation="farmer", ward="Kisumu_Central", registration_source="partner_assisted",
+    )
+    db_session.add(profile)
+    db_session.commit()
+    db_session.refresh(profile)
+
+    response = client.get("/profiles/by-phone/5323974138", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == profile.id
+    assert body["phone_number"] == "5323974138"
+
+
+def test_get_profile_by_phone_not_found_404(client):
+    response = client.get("/profiles/by-phone/0000000000", headers=AUTH_HEADERS)
+    assert response.status_code == 404
+
+
 def test_get_profile_requires_credential_401(client):
     response = client.get("/profiles/1")
     assert response.status_code == 401
@@ -160,6 +181,17 @@ def test_list_profiles_ordered_by_id(client):
     assert ids == sorted(ids)
     assert first.json()["id"] in ids
     assert second.json()["id"] in ids
+
+
+def test_list_profiles_can_filter_by_phone_number(client):
+    client.post("/profiles/", json=_rural_payload(phone_number="+254711000070"), headers=AUTH_HEADERS)
+    client.post("/profiles/", json=_urban_payload(phone_number="+254711000071"), headers=AUTH_HEADERS)
+
+    response = client.get("/profiles/", params={"phone_number": "+254711000071"}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["phone_number"] == "+254711000071"
 
 
 def test_update_profile_location_success(client, db_session):

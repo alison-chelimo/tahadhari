@@ -29,6 +29,7 @@ class AlertOut(BaseModel):
 
 
 class Channel(str, Enum):
+    TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
     SMS = "sms"
 
@@ -55,6 +56,20 @@ class MessageOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DeliveryAttemptIn(BaseModel):
+    force_channel: Optional[Channel] = None
+    media_url: Optional[str] = None
+
+
+class DeliveryAttemptOut(BaseModel):
+    message_id: int
+    channel: Channel
+    delivery_status: str
+    provider: str
+    provider_message_id: Optional[str] = None
+    detail: str
 
 
 class FeedbackType(str, Enum):
@@ -197,3 +212,18 @@ class RegistrationRequestOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CorridorSegmentMapOut(BaseModel):
+    flood_prediction_id: int
+    segment_name: str
+    risk_level: str
+    window_start: Optional[datetime] = None
+    window_end: Optional[datetime] = None
+    map_url: str
+
+
+class CorridorMapsOut(BaseModel):
+    alert_id: int
+    corridor_name: str
+    maps: list[CorridorSegmentMapOut]

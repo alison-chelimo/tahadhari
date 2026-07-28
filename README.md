@@ -1,6 +1,6 @@
 # Tahadhari
 
-Tahadhari turns weather warnings into clear, specific action. Farmers, fishermen, and drivers get WhatsApp instructions by occupation. Commuters get flood predictions for their exact road, with a map
+Tahadhari turns weather warnings into clear, specific action. Farmers, fishermen, and drivers get Telegram instructions by occupation. Commuters get flood predictions for their exact road, with a map
 
 ## Stack
 
@@ -21,6 +21,35 @@ uvicorn app.main:app --reload
 
 The API is then available at `http://localhost:8000` (interactive docs at `/docs`).
 
+## Telegram onboarding flow
+
+The Telegram bot now supports a button-first onboarding flow for Kenyan users:
+
+- Step 1: select county from inline buttons.
+- Step 2: select a major town in that county from inline buttons.
+- Step 3: select occupation from inline buttons (weather-affected roles).
+- Step 4: enter key asset as free text.
+
+Additional behavior:
+
+- `/start` does not re-register already registered users.
+- `/occupation` lets a registered user amend occupation only.
+- `/resetme` can clear the current Telegram test account only when dev reset is enabled.
+
+To receive inline button clicks, Telegram webhook config must allow both update types:
+
+- `message`
+- `callback_query`
+
+For local/dev repeat testing, run the API with:
+
+- `TELEGRAM_ENABLE_DEV_RESET=true`
+
+Then in Telegram:
+
+- send `/resetme`
+- send `/start`
+
 ## Running tests
 
 ```bash
@@ -36,6 +65,9 @@ pytest --cov=app --cov=ai_layer --cov-report=term-missing --cov-fail-under=80
 Tests run fully offline: the backend suite overrides the database with in-memory SQLite,
 and the `ai_layer` suite mocks all OpenAI/ICPAC/HTTP calls, so no real database, `.env`,
 or API keys are required to run them locally.
+
+Telegram webhook onboarding tests are in `app/tests/test_telegram_webhook.py` and include
+county/town callback-button flows plus occupation selection and reset behavior.
 
 ## Contributing / CI
 

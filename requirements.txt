@@ -28,3 +28,4 @@ pytest-cov
 pyjwt
 supabase
 bcrypt
+streamlit

@@ -57,6 +57,14 @@ def update_profile_location(profile_id: int, payload: LocationUpdateIn, db: Sess
     return profile
 
 
+@router.get("/by-phone/{phone_number}", response_model=ProfileOut)
+def get_profile_by_phone(phone_number: str, db: Session = Depends(get_db)):
+    profile = db.query(Profile).filter(Profile.phone_number == phone_number).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile with phone_number {phone_number!r} not found")
+    return profile
+
+
 @router.get("/{profile_id}", response_model=ProfileOut)
 def get_profile(profile_id: int, db: Session = Depends(get_db)):
     profile = db.query(Profile).filter(Profile.id == profile_id).first()
@@ -69,6 +77,10 @@ def get_profile(profile_id: int, db: Session = Depends(get_db)):
 def list_profiles(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    phone_number: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    return db.query(Profile).order_by(Profile.id).offset(skip).limit(limit).all()
+    query = db.query(Profile)
+    if phone_number:
+        query = query.filter(Profile.phone_number == phone_number)
+    return query.order_by(Profile.id).offset(skip).limit(limit).all()
