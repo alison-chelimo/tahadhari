@@ -36,3 +36,21 @@ else:
             print("Added profiles.registered_by")
         else:
             print("profiles.registered_by already present, skipping")
+
+        if "resolved_lat" not in existing_columns:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN resolved_lat DOUBLE PRECISION"))
+            print("Added profiles.resolved_lat")
+        else:
+            print("profiles.resolved_lat already present, skipping")
+
+        if "resolved_lon" not in existing_columns:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN resolved_lon DOUBLE PRECISION"))
+            print("Added profiles.resolved_lon")
+        else:
+            print("profiles.resolved_lon already present, skipping")
+
+        if "resolved_place_name" not in existing_columns:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN resolved_place_name VARCHAR"))
+            print("Added profiles.resolved_place_name")
+        else:
+            print("profiles.resolved_place_name already present, skipping")

@@ -29,6 +29,7 @@ class AlertOut(BaseModel):
 
 
 class Channel(str, Enum):
+    TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
     SMS = "sms"
 

@@ -12,8 +12,11 @@ base_url_default = os.getenv("TAHADHARI_API_BASE_URL", "http://localhost:8000")
 service_key_default = os.getenv("SERVICE_API_KEY", "")
 
 base_url = st.sidebar.text_input("API Base URL", value=base_url_default).rstrip("/")
-service_key = st.sidebar.text_input("Service API Key", value=service_key_default, type="password")
+service_key = st.sidebar.text_input("Service API Key", value=service_key_default, type="password").strip()
 headers = {"X-API-Key": service_key} if service_key else {}
+
+if not service_key:
+    st.sidebar.warning("Service API Key is empty. Protected endpoints will return 401 Not authenticated.")
 
 
 def api_request(method: str, path: str, payload: dict | None = None, params: dict | None = None):
@@ -21,6 +24,18 @@ def api_request(method: str, path: str, payload: dict | None = None, params: dic
     with httpx.Client(timeout=20.0) as client:
         response = client.request(method, url, json=payload, params=params, headers=headers)
     return response
+
+
+def render_response(resp: httpx.Response):
+    st.write("Status:", resp.status_code)
+    try:
+        st.json(resp.json())
+    except ValueError:
+        body_text = (resp.text or "").strip()
+        if body_text:
+            st.text(body_text)
+        else:
+            st.text("(empty response body)")
 
 
 col_a, col_b = st.columns(2)
@@ -45,7 +60,7 @@ with col_a:
                     "raw_payload": raw_payload,
                 }
                 resp = api_request("POST", "/alerts/ingest", payload=payload)
-                st.write(resp.status_code, resp.json())
+                render_response(resp)
             except Exception as exc:
                 st.error(str(exc))
 
@@ -54,13 +69,18 @@ with col_b:
     alert_id_for_predict = st.number_input("Corridor Alert ID", min_value=1, value=1, step=1)
     if st.button("Run Flood Prediction"):
         resp = api_request("POST", f"/alerts/predict/{int(alert_id_for_predict)}")
-        st.write(resp.status_code, resp.json())
+        render_response(resp)
 
     if st.button("Load Corridor Maps"):
         resp = api_request("GET", f"/maps/alerts/{int(alert_id_for_predict)}/corridor")
-        st.write(resp.status_code)
-        data = resp.json()
-        st.json(data)
+        data = None
+        render_response(resp)
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            data = {}
         for item in data.get("maps", []):
             st.markdown(f"Segment: {item['segment_name']} ({item['risk_level']})")
             st.image(item["map_url"], caption=item["segment_name"])
@@ -76,7 +96,7 @@ with col_c:
         alert_id = st.number_input("Alert ID", min_value=1, value=1, step=1)
         template_id_text = st.text_input("Template ID (optional)", value="")
         flood_prediction_id_text = st.text_input("Flood Prediction ID (optional)", value="")
-        channel = st.selectbox("Channel", options=["whatsapp", "sms"])
+        channel = st.selectbox("Channel", options=["telegram", "whatsapp", "sms"])
         final_text = st.text_area("Final Message Text", value="Heavy rainfall expected. Take precautions.")
         create_msg = st.form_submit_button("Create Message")
 
@@ -93,13 +113,13 @@ with col_c:
                 payload["flood_prediction_id"] = int(flood_prediction_id_text.strip())
 
             resp = api_request("POST", "/messages/", payload=payload)
-            st.write(resp.status_code, resp.json())
+            render_response(resp)
 
 with col_d:
     st.subheader("4) Send Delivery")
     with st.form("delivery_form"):
         message_id = st.number_input("Message ID", min_value=1, value=1, step=1)
-        force_channel = st.selectbox("Force Channel", options=["", "whatsapp", "sms"])
+        force_channel = st.selectbox("Force Channel", options=["", "telegram", "whatsapp", "sms"])
         media_url = st.text_input("Media URL (optional)", value="")
         send_now = st.form_submit_button("Send Message")
 
@@ -110,4 +130,4 @@ with col_d:
             if media_url.strip():
                 payload["media_url"] = media_url.strip()
             resp = api_request("POST", f"/delivery/messages/{int(message_id)}/send", payload=payload)
-            st.write(resp.status_code, resp.json())
+            render_response(resp)

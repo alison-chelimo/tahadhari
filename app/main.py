@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from .database import engine, Base
 from . import models
-from .routers import alerts, auth, templates, messages, feedback, profiles, registration, delivery, maps
+from .routers import alerts, auth, templates, messages, feedback, profiles, registration, delivery, maps, telegram
 
 Base.metadata.create_all(bind=engine)
 
@@ -16,6 +16,7 @@ app.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 app.include_router(registration.router, prefix="/registration", tags=["registration"])
 app.include_router(delivery.router, prefix="/delivery", tags=["delivery"])
 app.include_router(maps.router, prefix="/maps", tags=["maps"])
+app.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
 
 @app.get("/")
 def root():

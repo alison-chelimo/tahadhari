@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from ..schemas import DeliveryAttemptIn, DeliveryAttemptOut, Channel
 from ..services.delivery import DeliveryError, deliver_message
 
 router = APIRouter(dependencies=[Depends(require_service_or_admin)])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/messages/{message_id}/send", response_model=DeliveryAttemptOut)
@@ -21,7 +24,7 @@ def send_message(message_id: int, payload: DeliveryAttemptIn, db: Session = Depe
         raise HTTPException(status_code=404, detail=f"Profile {message.profile_id} not found")
 
     requested_channel = payload.force_channel.value if payload.force_channel else message.channel
-    if requested_channel not in (Channel.WHATSAPP.value, Channel.SMS.value):
+    if requested_channel not in (Channel.TELEGRAM.value, Channel.WHATSAPP.value, Channel.SMS.value):
         raise HTTPException(status_code=400, detail=f"Unsupported channel {requested_channel!r}")
 
     try:
@@ -42,6 +45,13 @@ def send_message(message_id: int, payload: DeliveryAttemptIn, db: Session = Depe
             detail=result.detail,
         )
     except DeliveryError as exc:
+        logger.warning(
+            "Delivery failed for message_id=%s profile_id=%s channel=%s: %s",
+            message.id,
+            profile.id,
+            requested_channel,
+            exc,
+        )
         message.delivery_status = "failed"
         db.commit()
         return DeliveryAttemptOut(
