@@ -7,6 +7,8 @@ from ..clients.alerts_api import AlertsApiClient, AlertsApiError
 # Claude disabled in favor of OpenAI -- switch back by uncommenting this import and
 # swapping OpenAIClient/OpenAIClientError below back to ClaudeClient/ClaudeClientError.
 # from ..clients.claude_client import ClaudeClient, ClaudeClientError
+from ..clients.google_maps_client import GoogleMapsClient, GoogleMapsError
+from ..clients.open_meteo_client import OpenMeteoClient, OpenMeteoError
 from ..clients.openai_client import OpenAIClient, OpenAIClientError
 from ..dead_letter import write_dead_letter
 from ..schemas import Alert, Profile, TemplateMatch, PredictionMatch, MessageIn, Message
@@ -42,6 +44,10 @@ class MessageDeliveryError(PersonalizationError):
 
 
 class FloodWarningDraft(BaseModel):
+    message_text: str
+
+
+class WeatherExplainerDraft(BaseModel):
     message_text: str
 
 
@@ -89,32 +95,63 @@ def fill_placeholders(template_text: str, values: dict[str, str]) -> str:
     return filled
 
 
-_GRAMMAR_SYSTEM_PROMPT = (
+_ENRICHMENT_SYSTEM_PROMPT = (
     "You are a careful copy-editor for safety-critical disaster-alert SMS/WhatsApp "
-    "messages sent to farmers, fishermen, and drivers. Fix ONLY grammar, spelling, and "
-    "awkward phrasing. Do NOT change, add, or remove any factual value: numbers, place "
-    "names, dates, times, or risk levels must stay byte-for-byte identical. Do NOT add "
-    "new instructions or omit existing ones. Reply with ONLY the corrected message text "
-    "-- no preamble, no quotes, no explanation."
+    "messages sent to farmers, fishermen, and drivers. Fix grammar, spelling, and "
+    "awkward phrasing. Do NOT change, remove, or invent any factual value: numbers, "
+    "place names, dates, times, or risk levels from the templated instruction must stay "
+    "factually unchanged. If current weather data is supplied, weave in one short "
+    "sentence referencing it. Then add one short sentence on why this matters for the "
+    "person's stated occupation, followed by 1-2 concrete, practical action tips. Do "
+    "NOT invent any data not present in the input. Respond ONLY via the required "
+    "structured schema."
 )
 
 
-async def _apply_grammar_pass(filled_text: str, openai_client: OpenAIClient) -> str:
+async def _apply_enrichment_pass(
+    filled_text: str, profile: Profile, raw_weather: dict | None, openai_client: OpenAIClient
+) -> str:
+    user_content = (
+        f"templated_instruction={filled_text}\n"
+        f"raw_weather={raw_weather}\n"
+        f"occupation={profile.occupation}\nlanguage={profile.language}"
+    )
     try:
-        corrected = (
-            await openai_client.create_text(
-                system=_GRAMMAR_SYSTEM_PROMPT, user_content=filled_text, max_tokens=512,
-            )
-        ).strip()
-        if not corrected:
-            raise InvalidLLMResponseError("empty response from grammar pass")
-        return corrected
-    except (OpenAIClientError, InvalidLLMResponseError) as exc:
+        draft = await openai_client.parse_structured(
+            system=_ENRICHMENT_SYSTEM_PROMPT, user_content=user_content,
+            output_model=WeatherExplainerDraft, max_tokens=512,
+        )
+        enriched = draft.message_text.strip()
+        if not enriched:
+            raise InvalidLLMResponseError("empty response from enrichment pass")
+        return enriched
+    except (OpenAIClientError, ValidationError, InvalidLLMResponseError) as exc:
         logger.error(
-            "OpenAI grammar pass failed/invalid; FALLING BACK to unedited template text. "
+            "OpenAI enrichment pass failed/invalid; FALLING BACK to unedited template text. "
             "error=%s filled_text=%r", exc, filled_text,
         )
         return filled_text
+
+
+async def _fetch_live_weather(
+    geography_ref: str, google_maps_client: GoogleMapsClient, open_meteo_client: OpenMeteoClient
+) -> dict | None:
+    """Geocodes a ward/corridor name to lat/lon and pulls today's Open-Meteo forecast for
+    it, so _apply_enrichment_pass can reference current conditions -- mirrors the
+    geocode-then-forecast pair location_weather.py already uses for point alerts, since
+    ward/corridor Alerts carry only a name (geography_ref), never coordinates. Returns
+    None on any geocoding/weather failure so enrichment still proceeds without live
+    weather rather than blocking message delivery."""
+    try:
+        geocode = await google_maps_client.geocode(geography_ref)
+        weather = await open_meteo_client.get_precipitation(geocode.latitude, geocode.longitude)
+        return weather.raw
+    except (GoogleMapsError, OpenMeteoError) as exc:
+        logger.warning(
+            "Live weather lookup failed for geography_ref=%r; enrichment will proceed "
+            "without live weather context. error=%s", geography_ref, exc,
+        )
+        return None
 
 
 _FLOOD_SYSTEM_PROMPT = (
@@ -166,13 +203,19 @@ async def personalize_message(
     *,
     openai_client: OpenAIClient | None = None,
     alerts_api_client: AlertsApiClient | None = None,
+    google_maps_client: GoogleMapsClient | None = None,
+    open_meteo_client: OpenMeteoClient | None = None,
 ) -> Message:
     openai_client = openai_client or OpenAIClient()
 
     if isinstance(content, TemplateMatch):
+        google_maps_client = google_maps_client or GoogleMapsClient()
+        open_meteo_client = open_meteo_client or OpenMeteoClient()
+
         values = build_placeholder_values(alert, profile)
         filled = fill_placeholders(content.template.template_text, values)
-        final_text = await _apply_grammar_pass(filled, openai_client)
+        raw_weather = await _fetch_live_weather(alert.geography_ref, google_maps_client, open_meteo_client)
+        final_text = await _apply_enrichment_pass(filled, profile, raw_weather, openai_client)
         template_id, flood_prediction_id = content.template.id, None
     elif isinstance(content, PredictionMatch):
         final_text = await _build_flood_warning_text(content, openai_client)
@@ -202,10 +245,6 @@ _WEATHER_EXPLAINER_SYSTEM_PROMPT = (
 )
 
 
-class WeatherExplainerDraft(BaseModel):
-    message_text: str
-
-
 async def personalize_weather_message(
     alert: Alert,
     profile: Profile,
@@ -217,9 +256,10 @@ async def personalize_weather_message(
 ) -> Message:
     """Combines the existing template pipeline with an LLM-authored, easier-to-understand
     explanation, for the location/weather conversation flow (see
-    ai_layer/services/location_weather.py). Unlike personalize_message()'s grammar-only
-    pass, this one lets the LLM weave in raw_weather -- but on any LLM failure it falls
-    back to the same plain filled-template text used everywhere else in this module."""
+    ai_layer/services/location_weather.py). raw_weather is already resolved by the
+    caller (point alerts carry a Profile with geocoded coordinates); on any LLM failure
+    this falls back to the same plain filled-template text used everywhere else in this
+    module."""
     openai_client = openai_client or OpenAIClient()
 
     values = build_placeholder_values(alert, profile)
