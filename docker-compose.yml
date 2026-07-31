@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    restart: unless-stopped
+
+  icpac-poll:
+    build: .
+    command: python -m ai_layer.icpac_poll
+    env_file: .env
+    environment:
+      TAHADHARI_API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  location-poll:
+    build: .
+    command: python -m ai_layer.location_poll
+    env_file: .env
+    environment:
+      TAHADHARI_API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped

@@ -2,6 +2,13 @@
 
 Tahadhari turns weather warnings into clear, specific action. Farmers, fishermen, and drivers get Telegram instructions by occupation. Commuters get flood predictions for their exact road, with a map
 
+## Built with
+
+Python, FastAPI, SQLAlchemy, PostgreSQL, Supabase, SQLite, OpenAI, GPT-4o-mini, Claude,
+Anthropic, httpx, Tenacity, Pydantic, JWT, Telegram Bot API, Google Maps API, Open-Meteo
+API, ICPAC GeoNode, WFS, GeoSpatial, pytest, GitHub Actions, REST API, Uvicorn, Docker,
+Railway
+
 ## Stack
 
 - **Backend API** (`app/`): FastAPI + SQLAlchemy, Supabase Postgres in production / SQLite in-memory for tests.
@@ -85,6 +92,38 @@ Then in Telegram:
 
 - send `/resetme`
 - send `/start`
+
+## Deploying
+
+The API and the `ai_layer` pollers run from a single Docker image (`Dockerfile`), so the
+Telegram webhook can be pointed at a permanent hosted URL instead of a local `cloudflared`
+tunnel.
+
+### Local Docker Compose run
+
+```bash
+docker compose up --build
+```
+
+This starts three containers from the same image: `api` (the FastAPI app, port 8000),
+`icpac-poll` (`python -m ai_layer.icpac_poll`), and `location-poll`
+(`python -m ai_layer.location_poll`). All three read env vars from `.env`.
+
+### Railway
+
+Each service has its own config-as-code file so they can share one repo with different
+start commands:
+
+- `railway.api.json` — the FastAPI/webhook service
+- `railway.icpac-poll.json` — the ICPAC ingestion poller
+- `railway.location-poll.json` — the location/weather poller
+
+To deploy: create one Railway service per config file (all pointing at this repo), and
+under each service's Settings → Config-as-code, set the Config File Path to the matching
+filename. Set the same environment variables as `.env` on each service, and point
+`TAHADHARI_API_BASE_URL` on the two poller services at the `api` service's Railway URL.
+Railway provisions a public HTTPS domain for the `api` service automatically — use it to
+set the Telegram webhook, the same way the `<TUNNEL_URL>` is used above.
 
 ## Running tests
 
