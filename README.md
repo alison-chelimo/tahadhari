@@ -2,6 +2,13 @@
 
 Tahadhari turns weather warnings into clear, specific action. Farmers, fishermen, and drivers get Telegram instructions by occupation. Commuters get flood predictions for their exact road, with a map
 
+## Built with
+
+Python, FastAPI, SQLAlchemy, PostgreSQL, Supabase, SQLite, OpenAI, GPT-4o-mini, Claude,
+Anthropic, httpx, Tenacity, Pydantic, JWT, Telegram Bot API, Google Maps API, Open-Meteo
+API, ICPAC GeoNode, WFS, GeoSpatial, pytest, GitHub Actions, REST API, Uvicorn, Docker,
+Railway
+
 ## Stack
 
 - **Backend API** (`app/`): FastAPI + SQLAlchemy, Supabase Postgres in production / SQLite in-memory for tests.
