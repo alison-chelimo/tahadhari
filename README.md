@@ -124,6 +124,11 @@ filename. Set the same environment variables as `.env` on each service, and poin
 Railway provisions a public HTTPS domain for the `api` service automatically — use it to
 set the Telegram webhook, the same way the `<TUNNEL_URL>` is used above.
 
+Each service auto-deploys on every push to `main` once its GitHub source/branch is
+connected (Settings → Source). On each service, also enable **Settings → Source → Wait
+for CI**, so Railway only deploys after `.github/workflows/ci.yml` (pytest + 80%
+coverage) passes on that commit, instead of deploying straight off the push.
+
 ## Running tests
 
 ```bash
