@@ -12,6 +12,7 @@ Railway
 
 - **Backend API** (`app/`): FastAPI + SQLAlchemy, Supabase Postgres in production / SQLite in-memory for tests.
 - **AI layer** (`ai_layer/`): a separate package that calls OpenAI (ChatGPT) to personalize messages and classify feedback, talking to the backend API over HTTP. Message personalization (`ai_layer/services/personalizer.py`) geocodes the alert's ward/corridor name via Google Maps, pulls live Open-Meteo rainfall for it, and has the LLM weave that into a fuller message with a brief why-it-matters explanation and occupation-specific action tips — falling back to the plain filled template on any lookup/LLM failure. Claude support is kept intact but disabled — see `ai_layer/clients/claude_client.py`. Also includes an ICPAC WFS poller (`ai_layer/icpac_poll.py`) that ingests hazard data as alerts, and a location/weather poller (`ai_layer/location_poll.py`) that geocodes a user's free-text location reply via Google Maps, pulls Open-Meteo rainfall for it, and ingests it through the same alert pipeline.
+- **Demo dashboard** (`dashboard/streamlit_app.py`): a Streamlit app for browsing message deliveries and road corridors without direct database access — run with `streamlit run dashboard/streamlit_app.py`.
 
 See [`API_GUIDE.md`](./API_GUIDE.md) for the full endpoint reference.
 
